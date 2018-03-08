@@ -18,6 +18,7 @@
 #define LOG_TAG "NxpEseHal"
 #include <log/log.h>
 
+#include "LsClient.h"
 #include "SecureElement.h"
 #include "phNxpEse_Api.h"
 
@@ -50,6 +51,10 @@ Return<void> SecureElement::init(
       ALOGE("%s: Failed to register death notification", __func__);
     }
   }
+  if (mIsEseInitialized) {
+    clientCallback->onStateChange(true);
+    return Void();
+  }
 
   status = seHalInit();
   if (status != ESESTATUS_SUCCESS) {
@@ -57,9 +62,20 @@ Return<void> SecureElement::init(
     return Void();
   }
 
-  clientCallback->onStateChange(true);
-
-  seHalDeInit();
+  LSCSTATUS lsStatus = LSC_doDownload(clientCallback);
+  /*
+   * LSC_doDownload returns LSCSTATUS_FAILED in case thread creation fails.
+   * So return callback as false.
+   * Otherwise callback will be called in LSDownload module.
+   */
+  if (lsStatus != LSCSTATUS_SUCCESS) {
+    ALOGE("%s: LSDownload thread creation failed!!!", __func__);
+    SecureElementStatus sestatus = seHalDeInit();
+    if (sestatus != SecureElementStatus::SUCCESS) {
+      ALOGE("%s: seHalDeInit failed!!!", __func__);
+    }
+    clientCallback->onStateChange(false);
+  }
   return Void();
 }
 
@@ -73,9 +89,9 @@ Return<bool> SecureElement::isCardPresent() { return true; }
 
 Return<void> SecureElement::transmit(const hidl_vec<uint8_t>& data,
                                      transmit_cb _hidl_cb) {
+  ESESTATUS status = ESESTATUS_FAILED;
   phNxpEse_data cmdApdu;
   phNxpEse_data rspApdu;
-  ESESTATUS status = ESESTATUS_FAILED;
   phNxpEse_memset(&cmdApdu, 0x00, sizeof(phNxpEse_data));
   phNxpEse_memset(&rspApdu, 0x00, sizeof(phNxpEse_data));
 
