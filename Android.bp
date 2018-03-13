@@ -53,10 +53,30 @@ cc_library_shared {
         "vendor.nxp.nxpese@1.0",
         "vendor.nxp.nxpnfc@1.0",
     ],
-
 }
 
+cc_library_shared {
 
+    name: "ls_client",
+    defaults: ["hidl_defaults"],
+    proprietary: true,
+
+    srcs: [
+        "ls_client/src/LsLib.cpp",
+        "ls_client/src/LsClient.cpp",
+    ],
+
+    export_include_dirs: ["ls_client/inc"],
+
+    shared_libs: [
+        "ese_spi_nxp",
+        "android.hardware.secure_element@1.0",
+        "liblog",
+        "libhidlbase",
+        "liblog",
+        "libutils",
+    ],
+}
 
 cc_binary {
     name: "android.hardware.secure_element@1.0-service",
@@ -74,6 +94,7 @@ cc_binary {
         "android.hardware.secure_element@1.0",
         "ese_spi_nxp",
         "libbase",
+        "ls_client",
         "libcutils",
         "libhardware",
         "libhidlbase",
