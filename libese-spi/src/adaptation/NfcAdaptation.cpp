@@ -29,7 +29,7 @@ using android::hardware::Void;
 using android::hardware::hidl_vec;
 using vendor::nxp::nxpnfc::V1_0::INxpNfc;
 
-sp<INxpNfc> NfcAdaptation::mHalNxpNfc;
+sp<INxpNfc> NfcAdaptation::mHalNxpNfc = nullptr;
 ThreadMutex NfcAdaptation::sIoctlLock;
 NfcAdaptation* NfcAdaptation::mpInstance = NULL;
 ThreadMutex NfcAdaptation::sLock;
@@ -39,6 +39,7 @@ extern bool ese_debug_enabled;
 void NfcAdaptation::Initialize() {
   const char* func = "NfcAdaptation::Initialize";
   ALOGD_IF(ese_debug_enabled, "%s", func);
+  if (mHalNxpNfc != nullptr) return;
   mHalNxpNfc = INxpNfc::tryGetService();
   LOG_FATAL_IF(mHalNxpNfc == nullptr, "Failed to retrieve the NXP NFC HAL!");
   if (mHalNxpNfc != nullptr) {
