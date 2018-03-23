@@ -34,7 +34,6 @@ sp<V1_0::ISecureElementHalCallback> SecureElement::mCallbackV1_0 = nullptr;
 
 SecureElement::SecureElement()
     : mOpenedchannelCount(0),
-      mIsEseInitialized(false),
       mOpenedChannels{false, false, false, false} {}
 
 Return<void> SecureElement::init(
@@ -51,7 +50,7 @@ Return<void> SecureElement::init(
       ALOGE("%s: Failed to register death notification", __func__);
     }
   }
-  if (mIsEseInitialized) {
+  if (isSeInitialized()) {
     clientCallback->onStateChange(true);
     return Void();
   }
@@ -124,7 +123,7 @@ Return<void> SecureElement::openLogicalChannel(const hidl_vec<uint8_t>& aid,
   resApduBuff.channelNumber = 0xff;
   memset(&resApduBuff, 0x00, sizeof(resApduBuff));
 
-  if (!mIsEseInitialized) {
+  if (!isSeInitialized()) {
     ESESTATUS status = seHalInit();
     if (status != ESESTATUS_SUCCESS) {
       ALOGE("%s: seHalInit Failed!!!", __func__);
@@ -245,7 +244,7 @@ Return<void> SecureElement::openBasicChannel(const hidl_vec<uint8_t>& aid,
                                              openBasicChannel_cb _hidl_cb) {
   hidl_vec<uint8_t> result;
 
-  if (!mIsEseInitialized) {
+  if (!isSeInitialized()) {
     ESESTATUS status = seHalInit();
     if (status != ESESTATUS_SUCCESS) {
       ALOGE("%s: seHalInit Failed!!!", __func__);
@@ -384,6 +383,8 @@ void SecureElement::serviceDied(uint64_t /*cookie*/, const wp<IBase>& /*who*/) {
   }
 }
 
+bool SecureElement::isSeInitialized() { return phNxpEse_isOpen(); }
+
 ESESTATUS SecureElement::seHalInit() {
   ESESTATUS status = ESESTATUS_SUCCESS;
   phNxpEse_initParams initParams;
@@ -397,8 +398,6 @@ ESESTATUS SecureElement::seHalInit() {
     status = phNxpEse_init(initParams);
     if (status != ESESTATUS_SUCCESS) {
       ALOGE("%s: SecureElement init failed!!!", __func__);
-    } else {
-      mIsEseInitialized = true;
     }
   }
   return status;
@@ -416,7 +415,6 @@ SecureElement::seHalDeInit() {
     if (status != ESESTATUS_SUCCESS) {
       sestatus = SecureElementStatus::FAILED;
     } else {
-      mIsEseInitialized = false;
       sestatus = SecureElementStatus::SUCCESS;
 
       for (uint8_t xx = 0; xx < MAX_LOGICAL_CHANNELS; xx++) {
