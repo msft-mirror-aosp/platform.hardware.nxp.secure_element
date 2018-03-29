@@ -322,6 +322,16 @@ clean_and_return_2:
 }
 
 /******************************************************************************
+ * \ingroup spi_libese
+ *
+ * \brief  Check if libese has opened
+ *
+ * \retval return false if it is close, otherwise true.
+ *
+ ******************************************************************************/
+bool phNxpEse_isOpen() { return nxpese_ctxt.EseLibStatus != ESE_STATUS_CLOSE; }
+
+/******************************************************************************
  * Function         phNxpEse_openPrioSession
  *
  * Description      This function is called by Jni during the
