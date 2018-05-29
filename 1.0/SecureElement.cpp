@@ -171,6 +171,13 @@ Return<void> SecureElement::openLogicalChannel(const hidl_vec<uint8_t>& aid,
   phNxpEse_free(rspApdu.p_data);
 
   if (sestatus != SecureElementStatus::SUCCESS) {
+    /*If first logical channel open fails, DeInit SE*/
+    if (isSeInitialized() && (mOpenedchannelCount == 0)) {
+      SecureElementStatus deInitStatus = seHalDeInit();
+      if (deInitStatus != SecureElementStatus::SUCCESS) {
+        ALOGE("%s: seDeInit Failed", __func__);
+      }
+    }
     /*If manageChanle is failed in any of above cases
     send the callback and return*/
     _hidl_cb(resApduBuff, sestatus);
@@ -304,11 +311,17 @@ Return<void> SecureElement::openBasicChannel(const hidl_vec<uint8_t>& aid,
     }
   }
 
-  if ((sestatus != SecureElementStatus::SUCCESS) && mOpenedChannels[0]) {
-    SecureElementStatus closeChannelStatus =
-        closeChannel(DEFAULT_BASIC_CHANNEL);
-    if (closeChannelStatus != SecureElementStatus::SUCCESS) {
-      ALOGE("%s: closeChannel Failed", __func__);
+  if (sestatus != SecureElementStatus::SUCCESS) {
+    SecureElementStatus closeStatus = SecureElementStatus::IOERROR;
+    /*If first basic channel open fails, DeInit SE*/
+    if ((mOpenedChannels[DEFAULT_BASIC_CHANNEL] == false) &&
+        (mOpenedchannelCount == 0)) {
+      closeStatus = seHalDeInit();
+    } else {
+      closeStatus = closeChannel(DEFAULT_BASIC_CHANNEL);
+    }
+    if (closeStatus != SecureElementStatus::SUCCESS) {
+      ALOGE("%s: close Failed", __func__);
     }
   }
   _hidl_cb(result, sestatus);
