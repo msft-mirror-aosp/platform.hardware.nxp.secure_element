@@ -90,8 +90,7 @@ LSCSTATUS LSC_doDownload(
 void* performLSDownload_thread(__attribute__((unused)) void* data) {
   ALOGD_IF(ese_debug_enabled, "%s enter:  ", __func__);
 
-  const char* lsUpdateBackupPath =
-      "/data/vendor/secure_element/loaderservice_updater.txt";
+  const char* lsUpdateBackupPath = "/vendor/etc/loaderservice_updater.lss";
   const char* lsUpdateBackupOutPath =
       "/data/vendor/secure_element/loaderservice_updater_out.txt";
 
@@ -114,26 +113,10 @@ void* performLSDownload_thread(__attribute__((unused)) void* data) {
   } else {
     ALOGD_IF(ese_debug_enabled, "%s File opened %s\n", __func__,
              lsUpdateBackupPath);
-    fseek(fIn, 0, SEEK_END);
-    long fsize = ftell(fIn);
-    rewind(fIn);
-
-    char* lsUpdateBuf = (char*)phNxpEse_memalloc(fsize + 1);
-    fread(lsUpdateBuf, fsize, 1, fIn);
 
     FILE* fOut = fopen(lsUpdateBackupOutPath, "wb+");
     if (fOut == NULL) {
       ALOGE("%s Failed to open file %s\n", __func__, lsUpdateBackupOutPath);
-      phNxpEse_free(lsUpdateBuf);
-      pthread_exit(NULL);
-      cCallback->onStateChange(true);
-      return NULL;
-    }
-
-    long size = fwrite(lsUpdateBuf, 1, fsize, fOut);
-    if (size != fsize) {
-      ALOGE("%s ERROR - Failed to write %ld bytes to file\n", __func__, fsize);
-      phNxpEse_free(lsUpdateBuf);
       pthread_exit(NULL);
       cCallback->onStateChange(true);
       return NULL;
@@ -143,13 +126,6 @@ void* performLSDownload_thread(__attribute__((unused)) void* data) {
                                  (uint8_t*)hash, (uint16_t)sizeof(hash), resSW);
     ALOGD_IF(ese_debug_enabled, "%s LSC_Start completed\n", __func__);
     if (status == LSCSTATUS_SUCCESS) {
-      if (remove(lsUpdateBackupPath) == 0) {
-        ALOGD_IF(ese_debug_enabled, "%s  : %s file deleted successfully\n",
-                 __func__, lsUpdateBackupPath);
-      } else {
-        ALOGD_IF(ese_debug_enabled, "%s  : %s file deletion failed!!!\n",
-                 __func__, lsUpdateBackupPath);
-      }
       cCallback->onStateChange(true);
     } else {
       ESESTATUS status = phNxpEse_deInit();
@@ -163,7 +139,6 @@ void* performLSDownload_thread(__attribute__((unused)) void* data) {
       }
       cCallback->onStateChange(false);
     }
-    phNxpEse_free(lsUpdateBuf);
   }
   pthread_exit(NULL);
   ALOGD_IF(ese_debug_enabled, "%s pthread_exit\n", __func__);
