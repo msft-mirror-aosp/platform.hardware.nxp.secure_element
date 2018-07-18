@@ -161,15 +161,6 @@ void* performLSDownload_thread(__attribute__((unused)) void* data) {
     ALOGD_IF(ese_debug_enabled, "%s File opened %s\n", __func__,
              sourcePath.c_str());
 
-    outPath.assign(ls_script_output_prefix);
-    outPath += ('0' + index);
-    outPath += ls_script_output_suffix;
-
-    FILE* fOut = fopen(outPath.c_str(), "wb+");
-    if (fOut == NULL) {
-      ALOGE("%s Failed to open file %s\n", __func__, outPath.c_str());
-      break;
-    }
     /*Read the script content to a local buffer*/
     fseek(fIn, 0, SEEK_END);
     long lsBufSize = ftell(fIn);
@@ -209,6 +200,18 @@ void* performLSDownload_thread(__attribute__((unused)) void* data) {
                __func__);
       continue;
     }
+
+    /*Create output file to write response data*/
+    outPath.assign(ls_script_output_prefix);
+    outPath += ('0' + index);
+    outPath += ls_script_output_suffix;
+
+    FILE* fOut = fopen(outPath.c_str(), "wb+");
+    if (fOut == NULL) {
+      ALOGE("%s Failed to open file %s\n", __func__, outPath.c_str());
+      break;
+    }
+    fclose(fOut);
 
     /*Uptdates current script*/
     status = LSC_Start(sourcePath.c_str(), outPath.c_str(), (uint8_t*)hash,
