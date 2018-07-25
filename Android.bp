@@ -71,10 +71,12 @@ cc_library_shared {
     shared_libs: [
         "ese_spi_nxp",
         "android.hardware.secure_element@1.0",
+        "libcutils",
         "liblog",
         "libhidlbase",
         "liblog",
         "libutils",
+        "libcrypto"
     ],
 }
 
