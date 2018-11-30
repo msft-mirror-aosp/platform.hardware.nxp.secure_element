@@ -71,17 +71,18 @@ cc_library_shared {
     shared_libs: [
         "ese_spi_nxp",
         "android.hardware.secure_element@1.0",
+        "libcutils",
         "liblog",
         "libhidlbase",
         "liblog",
         "libutils",
+        "libcrypto"
     ],
 }
 
-cc_binary {
-    name: "android.hardware.secure_element@1.0-service",
+cc_defaults {
+    name: "android.hardware.secure_element@1.0_defaults",
     relative_install_path: "hw",
-    init_rc: ["1.0/android.hardware.secure_element@1.0-service.rc"],
     proprietary: true,
     defaults: ["hidl_defaults"],
     srcs: [
@@ -105,4 +106,16 @@ cc_binary {
         "vendor.nxp.nxpese@1.0",
         "vendor.nxp.nxpnfc@1.0",
     ],
+}
+
+cc_binary {
+    name: "android.hardware.secure_element@1.0-service",
+    init_rc: ["1.0/android.hardware.secure_element@1.0-service.rc"],
+    defaults: ["android.hardware.secure_element@1.0_defaults"],
+}
+
+cc_binary {
+    name: "android.hardware.secure_element@1.0-service-disabled",
+    init_rc: ["1.0/android.hardware.secure_element@1.0-service-disabled.rc"],
+    defaults: ["android.hardware.secure_element@1.0_defaults"],
 }
