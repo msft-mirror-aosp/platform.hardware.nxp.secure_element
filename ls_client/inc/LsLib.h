@@ -510,6 +510,17 @@ LSCSTATUS LSC_UpdateLsHash(uint8_t* hash, long hashLen, uint8_t slotId);
 
 /*******************************************************************************
 **
+** Function:        LSC_ReadLscInfo
+**
+** Description:     Read the info of LS applet
+**
+** Returns:         SUCCESS/FAILURE
+**
+*******************************************************************************/
+LSCSTATUS LSC_ReadLscInfo(uint8_t* state, uint16_t* version);
+
+/*******************************************************************************
+**
 ** Function:        Numof_lengthbytes
 **
 ** Description:     Checks the number of length bytes and assigns
