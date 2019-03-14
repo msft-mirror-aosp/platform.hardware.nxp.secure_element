@@ -2130,3 +2130,57 @@ LSCSTATUS LSC_UpdateLsHash(uint8_t* hash, long hashLen, uint8_t slotId) {
   phNxpEse_free(rspApdu.p_data);
   return lsStatus;
 }
+
+/*******************************************************************************
+**
+** Function:        LSC_ReadLscInfo
+**
+** Description:     Read the state of LS applet
+**
+** Returns:         SUCCESS/FAILURE
+**
+*******************************************************************************/
+LSCSTATUS LSC_ReadLscInfo(uint8_t* state, uint16_t* version) {
+  static const char fn[] = "LSC_ReadLscInfo";
+  phNxpEse_data cmdApdu;
+  phNxpEse_data rspApdu;
+  LSCSTATUS status = LSCSTATUS_FAILED;
+  ALOGD_IF(ese_debug_enabled, "%s: Enter ", __func__);
+
+  phNxpEse_memset(&cmdApdu, 0x00, sizeof(phNxpEse_data));
+  phNxpEse_memset(&rspApdu, 0x00, sizeof(phNxpEse_data));
+
+  /*p_data will have channel_id (1 byte) + SelectLsc APDU*/
+  cmdApdu.len = (int32_t)(sizeof(SelectLsc) + 1);
+  cmdApdu.p_data = (uint8_t*)phNxpEse_memalloc(cmdApdu.len * sizeof(uint8_t));
+  cmdApdu.p_data[0] = 0x00;  // fchannel 0
+
+  memcpy(&(cmdApdu.p_data[1]), SelectLsc, sizeof(SelectLsc));
+
+  ALOGD_IF(ese_debug_enabled, "%s: Selecting Loader service applet", fn);
+
+  ESESTATUS eseStat = phNxpEse_Transceive(&cmdApdu, &rspApdu);
+
+  if (eseStat != ESESTATUS_SUCCESS && (rspApdu.len == 0x00)) {
+    status = LSCSTATUS_FAILED;
+    ALOGE("%s: SE transceive failed status = 0x%X", fn, status);
+  } else if (((rspApdu.p_data[rspApdu.len - 2] == 0x90) &&
+              (rspApdu.p_data[rspApdu.len - 1] == 0x00))) {
+    status = Process_SelectRsp(rspApdu.p_data, (rspApdu.len - 2));
+    if (status != LSCSTATUS_SUCCESS) {
+      ALOGE("%s: Select Lsc Rsp doesnt have a valid key; status = 0x%X", fn,
+            status);
+    } else {
+      *state = rspApdu.p_data[18];
+      *version = (rspApdu.p_data[22] << 8) | rspApdu.p_data[23];
+    }
+  } else if (rspApdu.p_data[rspApdu.len - 2] != 0x90) {
+    ALOGE("%s: Selecting Loader service applet failed", fn);
+    status = LSCSTATUS_FAILED;
+  }
+
+  ALOGD_IF(ese_debug_enabled, "%s: Exit ", __func__);
+  phNxpEse_free(cmdApdu.p_data);
+  phNxpEse_free(rspApdu.p_data);
+  return status;
+}
