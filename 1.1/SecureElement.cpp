@@ -27,29 +27,28 @@ extern bool ese_debug_enabled;
 namespace android {
 namespace hardware {
 namespace secure_element {
-namespace V1_0 {
+namespace V1_1 {
 namespace implementation {
 
 sp<V1_0::ISecureElementHalCallback> SecureElement::mCallbackV1_0 = nullptr;
+sp<V1_1::ISecureElementHalCallback> SecureElement::mCallbackV1_1 = nullptr;
 
 static void onLSCompleted(bool result, std::string reason, void* arg) {
   ((SecureElement*)arg)->onStateChange(result, reason);
 }
 
 SecureElement::SecureElement()
-    : mOpenedchannelCount(0),
-      mOpenedChannels{false, false, false, false} {}
+    : mOpenedchannelCount(0), mOpenedChannels{false, false, false, false} {}
 
 Return<void> SecureElement::init(
-    const sp<
-        ::android::hardware::secure_element::V1_0::ISecureElementHalCallback>&
-        clientCallback) {
+    const sp<V1_0::ISecureElementHalCallback>& clientCallback) {
   ESESTATUS status = ESESTATUS_SUCCESS;
 
   if (clientCallback == nullptr) {
     return Void();
   } else {
     mCallbackV1_0 = clientCallback;
+    mCallbackV1_1 = nullptr;
     if (!mCallbackV1_0->linkToDeath(this, 0 /*cookie*/)) {
       ALOGE("%s: Failed to register death notification", __func__);
     }
@@ -78,6 +77,48 @@ Return<void> SecureElement::init(
       ALOGE("%s: seHalDeInit failed!!!", __func__);
     }
     clientCallback->onStateChange(false);
+  }
+  return Void();
+}
+
+Return<void> SecureElement::init_1_1(
+    const sp<V1_1::ISecureElementHalCallback>& clientCallback) {
+  ESESTATUS status = ESESTATUS_SUCCESS;
+
+  if (clientCallback == nullptr) {
+    return Void();
+  } else {
+    mCallbackV1_1 = clientCallback;
+    mCallbackV1_0 = nullptr;
+    if (!mCallbackV1_1->linkToDeath(this, 0 /*cookie*/)) {
+      ALOGE("%s: Failed to register death notification", __func__);
+    }
+  }
+  if (isSeInitialized()) {
+    clientCallback->onStateChange_1_1(true, "NXP SE HAL init ok");
+    return Void();
+  }
+
+  status = seHalInit();
+  if (status != ESESTATUS_SUCCESS) {
+    clientCallback->onStateChange_1_1(false, "NXP SE HAL init failed");
+    return Void();
+  }
+
+  LSCSTATUS lsStatus = LSC_doDownload(onLSCompleted, (void*)this);
+  /*
+   * LSC_doDownload returns LSCSTATUS_FAILED in case thread creation fails.
+   * So return callback as false.
+   * Otherwise callback will be called in LSDownload module.
+   */
+  if (lsStatus != LSCSTATUS_SUCCESS) {
+    ALOGE("%s: LSDownload thread creation failed!!!", __func__);
+    SecureElementStatus sestatus = seHalDeInit();
+    if (sestatus != SecureElementStatus::SUCCESS) {
+      ALOGE("%s: seHalDeInit failed!!!", __func__);
+    }
+    clientCallback->onStateChange_1_1(false,
+                                      "Failed to create LS download thread");
   }
   return Void();
 }
@@ -334,8 +375,7 @@ Return<void> SecureElement::openBasicChannel(const hidl_vec<uint8_t>& aid,
   return Void();
 }
 
-Return<::android::hardware::secure_element::V1_0::SecureElementStatus>
-SecureElement::closeChannel(uint8_t channelNumber) {
+Return<SecureElementStatus> SecureElement::closeChannel(uint8_t channelNumber) {
   ESESTATUS status = ESESTATUS_FAILED;
   SecureElementStatus sestatus = SecureElementStatus::FAILED;
 
@@ -397,6 +437,11 @@ void SecureElement::serviceDied(uint64_t /*cookie*/, const wp<IBase>& /*who*/) {
   }
   if (mCallbackV1_0 != nullptr) {
     mCallbackV1_0->unlinkToDeath(this);
+    mCallbackV1_0 = nullptr;
+  }
+  if (mCallbackV1_1 != nullptr) {
+    mCallbackV1_1->unlinkToDeath(this);
+    mCallbackV1_1 = nullptr;
   }
 }
 
@@ -420,8 +465,7 @@ ESESTATUS SecureElement::seHalInit() {
   return status;
 }
 
-Return<::android::hardware::secure_element::V1_0::SecureElementStatus>
-SecureElement::seHalDeInit() {
+Return<SecureElementStatus> SecureElement::seHalDeInit() {
   ESESTATUS status = ESESTATUS_SUCCESS;
   SecureElementStatus sestatus = SecureElementStatus::FAILED;
   status = phNxpEse_deInit();
@@ -445,11 +489,15 @@ SecureElement::seHalDeInit() {
 
 void SecureElement::onStateChange(bool result, std::string reason) {
   ALOGD("%s: result: %d, reaon= %s", __func__, result, reason.c_str());
-  mCallbackV1_0->onStateChange(result);
+  if (mCallbackV1_1 != nullptr) {
+    mCallbackV1_1->onStateChange_1_1(result, reason);
+  } else if (mCallbackV1_0 != nullptr) {
+    mCallbackV1_0->onStateChange(result);
+  }
 }
 
 }  // namespace implementation
-}  // namespace V1_0
+}  // namespace V1_1
 }  // namespace secure_element
 }  // namespace hardware
 }  // namespace android
