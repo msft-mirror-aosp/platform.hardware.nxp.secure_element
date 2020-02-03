@@ -417,16 +417,13 @@ Return<SecureElementStatus> SecureElement::closeChannel(uint8_t channelNumber) {
     phNxpEse_free(rspApdu.p_data);
   }
 
-  if ((channelNumber == DEFAULT_BASIC_CHANNEL) ||
-      (sestatus == SecureElementStatus::SUCCESS)) {
-    if (mOpenedChannels[channelNumber] != false) mOpenedchannelCount--;
-    mOpenedChannels[channelNumber] = false;
-    /*If there are no channels remaining close secureElement*/
-    if (mOpenedchannelCount == 0) {
-      sestatus = seHalDeInit();
-    } else {
-      sestatus = SecureElementStatus::SUCCESS;
-    }
+  if (mOpenedChannels[channelNumber] != false) mOpenedchannelCount--;
+  mOpenedChannels[channelNumber] = false;
+  /*If there are no channels remaining close secureElement*/
+  if (mOpenedchannelCount == 0) {
+    sestatus = seHalDeInit();
+  } else {
+    sestatus = SecureElementStatus::SUCCESS;
   }
   return sestatus;
 }
