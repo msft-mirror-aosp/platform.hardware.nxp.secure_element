@@ -435,10 +435,6 @@ LSCSTATUS LSC_loadapplet(Lsc_ImageInfo_t* Os_info, LSCSTATUS status,
   while (!feof(Os_info->fp) && (Os_info->bytes_read < Os_info->fls_size)) {
     len_byte = 0;
     offset = 0;
-    /*Check if the certificate/ is verified or not*/
-    if (status != LSCSTATUS_SUCCESS) {
-      goto exit;
-    }
 
     uint8_t temp_buf[1024];
     memset(temp_buf, 0, sizeof(temp_buf));
@@ -572,7 +568,7 @@ LSCSTATUS LSC_Check_KeyIdentifier(Lsc_ImageInfo_t* Os_info, LSCSTATUS status,
                                   int32_t wNewLen) {
   static const char fn[] = "LSC_Check_KeyIdentifier";
   status = LSCSTATUS_FAILED;
-  uint8_t read_buf[1024];
+  uint8_t read_buf[1024] = {0};
   uint16_t offset = 0, len_byte = 0;
   int32_t wLen;
   uint8_t certf_found = LSCSTATUS_FAILED;
