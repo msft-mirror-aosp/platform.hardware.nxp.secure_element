@@ -95,7 +95,7 @@ LSCSTATUS LSC_update_seq_handler(
   ALOGD_IF(ese_debug_enabled, "%s: enter", fn);
   memset(&update_info, 0, sizeof(Lsc_ImageInfo_t));
   if (dest != NULL) {
-    strcat(update_info.fls_RespPath, dest);
+    strlcat(update_info.fls_RespPath, dest, sizeof(update_info.fls_RespPath));
     ALOGD_IF(ese_debug_enabled,
              "%s: Loader Service response data path/destination: %s", fn, dest);
     update_info.bytes_wrote = 0xAA;
@@ -106,7 +106,7 @@ LSCSTATUS LSC_update_seq_handler(
     return LSCSTATUS_FAILED;
   }
   // memcpy(update_info.fls_path, (char*)Lsc_path, sizeof(Lsc_path));
-  strcat(update_info.fls_path, name);
+  strlcat(update_info.fls_path, name, sizeof(update_info.fls_path));
   ALOGD_IF(ese_debug_enabled, "Selected applet to install is: %s",
            update_info.fls_path);
 
