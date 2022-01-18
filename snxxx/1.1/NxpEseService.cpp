@@ -17,15 +17,16 @@
  ******************************************************************************/
 #define LOG_TAG "nxpese@1.1-service"
 #include <android/hardware/secure_element/1.1/ISecureElement.h>
-#include <log/log.h>
-#include <vendor/nxp/nxpese/1.0/INxpEse.h>
-#include "VirtualISO.h"
-
 #include <hidl/LegacySupport.h>
+#include <log/log.h>
 #include <string.h>
+#include <vendor/nxp/nxpese/1.0/INxpEse.h>
+
 #include <regex>
+
 #include "NxpEse.h"
 #include "SecureElement.h"
+#include "VirtualISO.h"
 #include "eSEClient.h"
 
 // Generated HIDL files
