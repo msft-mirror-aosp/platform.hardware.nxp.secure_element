@@ -307,6 +307,11 @@ ScopedAStatus SecureElement::openLogicalChannel(
   LogicalChannelResponse resApduBuff;
   resApduBuff.channelNumber = 0xff;
   memset(&resApduBuff, 0x00, sizeof(resApduBuff));
+  if (aid.size() > MAX_AID_LENGTH) {
+    LOG(ERROR) << "%s: AID out of range!!!" << __func__;
+    *_aidl_return = resApduBuff;
+    return ScopedAStatus::fromServiceSpecificError(FAILED);
+  }
 
   /*
    * Basic channel & reserved channel if any is removed
@@ -506,11 +511,16 @@ ScopedAStatus SecureElement::openLogicalChannel(
 ScopedAStatus SecureElement::openBasicChannel(
     const std::vector<uint8_t>& aid, int8_t p2,
     std::vector<uint8_t>* _aidl_return) {
+  std::vector<uint8_t> result;
+  if (aid.size() > MAX_AID_LENGTH) {
+    LOG(ERROR) << "%s: AID out of range!!!" << __func__;
+    *_aidl_return = result;
+    return ScopedAStatus::fromServiceSpecificError(FAILED);
+  }
   AutoMutex guard(seHalLock);
   ESESTATUS status = ESESTATUS_SUCCESS;
   phNxpEse_7816_cpdu_t cpdu;
   phNxpEse_7816_rpdu_t rpdu;
-  std::vector<uint8_t> result;
 
   if (mOpenedChannels[0]) {
     LOG(ERROR) << "openBasicChannel failed, channel already in use";
