@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018 NXP
+ *  Copyright 2018,2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -125,6 +125,11 @@ Return<void> SecureElement::openLogicalChannel(const hidl_vec<uint8_t>& aid,
   LogicalChannelResponse resApduBuff;
   resApduBuff.channelNumber = 0xff;
   memset(&resApduBuff, 0x00, sizeof(resApduBuff));
+  if (aid.size() > MAX_AID_LENGTH) {
+    ALOGE("%s: AID out of range!!!", __func__);
+    _hidl_cb(resApduBuff, SecureElementStatus::FAILED);
+    return Void();
+  }
 
   if (!isSeInitialized()) {
     ESESTATUS status = seHalInit();
@@ -254,6 +259,11 @@ Return<void> SecureElement::openBasicChannel(const hidl_vec<uint8_t>& aid,
                                              uint8_t p2,
                                              openBasicChannel_cb _hidl_cb) {
   hidl_vec<uint8_t> result;
+  if (aid.size() > MAX_AID_LENGTH) {
+    ALOGE("%s: AID out of range!!!", __func__);
+    _hidl_cb(result, SecureElementStatus::FAILED);
+    return Void();
+  }
 
   if (!isSeInitialized()) {
     ESESTATUS status = seHalInit();

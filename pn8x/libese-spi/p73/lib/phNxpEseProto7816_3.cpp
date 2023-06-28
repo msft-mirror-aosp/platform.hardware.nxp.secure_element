@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018 NXP
+ *  Copyright 2018,2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -967,7 +967,7 @@ static ESESTATUS phNxpEseProto7816_ProcessResponse(void) {
             IDLE_STATE;
         phNxpEseProto7816_3_Var.timeoutCounter = PH_PROTO_7816_VALUE_ZERO;
         ALOGE("%s calling phNxpEse_StoreDatainList", __FUNCTION__);
-        phNxpEse_StoreDatainList(data_len, p_data);
+        status = phNxpEse_StoreDatainList(data_len, p_data);
       }
     }
   }
@@ -1033,6 +1033,13 @@ static ESESTATUS TransceiveProcess(void) {
                       &phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx,
                       sizeof(phNxpEseProto7816_NextTx_Info_t));
       status = phNxpEseProto7816_ProcessResponse();
+      if (ESESTATUS_NOT_ENOUGH_MEMORY == status ||
+          ESESTATUS_INVALID_RECEIVE_LENGTH == status) {
+        ALOGE("%s Processing response failed, shall retry in new session",
+              __FUNCTION__);
+        phNxpEseProto7816_3_Var.phNxpEseProto7816_nextTransceiveState =
+            IDLE_STATE;
+      }
     } else {
       ALOGD_IF(ese_debug_enabled,
                "%s Transceive send failed, going to recovery!", __FUNCTION__);
