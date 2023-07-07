@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2020-2021 NXP
+ *  Copyright 2020-2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
  *
  ******************************************************************************/
 #include "OsuHalExtn.h"
+
 #include <ese_config.h>
 
 #define LOG_TAG "OsuHalExtn"
@@ -23,8 +24,8 @@
 
 #define DEFAULT_MAX_WTX_COUNT 60
 
-const static hidl_vec<uint8_t> OSU_AID = {0x4F, 0x70, 0x80, 0x13, 0x04,
-                                          0xDE, 0xAD, 0xBE, 0xEF};
+const static std::vector<uint8_t> OSU_AID = {0x4F, 0x70, 0x80, 0x13, 0x04,
+                                             0xDE, 0xAD, 0xBE, 0xEF};
 const static uint8_t defaultSelectAid[] = {0x00, 0xA4, 0x04, 0x00, 0x00};
 
 /*******************************************************************************
@@ -38,7 +39,7 @@ const static uint8_t defaultSelectAid[] = {0x00, 0xA4, 0x04, 0x00, 0x00};
 **              OSU_BLOCKED_MODE, OSU_GP_MODE)
 **
 *******************************************************************************/
-OsuHalExtn::OsuApduMode OsuHalExtn::isOsuMode(const hidl_vec<uint8_t>& evt,
+OsuHalExtn::OsuApduMode OsuHalExtn::isOsuMode(const std::vector<uint8_t>& evt,
                                               uint8_t type,
                                               phNxpEse_data* pCmdData) {
   OsuApduMode osuSubState = (isAppOSUMode ? OSU_PROP_MODE : NON_OSU_MODE);
@@ -49,7 +50,7 @@ OsuHalExtn::OsuApduMode OsuHalExtn::isOsuMode(const hidl_vec<uint8_t>& evt,
        * update & return OSU_PROP_MODE if OpenBasicChannel AID request matches
        * OSU_AID
        */
-      if (!memcmp(&evt[0], &OSU_AID[0], OSU_AID.size())) {
+      if (evt.size() && !memcmp(&evt[0], &OSU_AID[0], OSU_AID.size())) {
         isAppOSUMode = true;
         osuSubState = OSU_PROP_MODE;
         ALOGD("Dedicated mode is set !!!!!!!!!!!!!!!!!");
@@ -197,7 +198,7 @@ bool OsuHalExtn::isOsuMode() { return (isAppOSUMode || isJcopOSUMode); }
 **
 *******************************************************************************/
 OsuHalExtn::OsuApduMode OsuHalExtn::checkTransmit(
-    uint8_t* input, uint32_t* outLength, const hidl_vec<uint8_t>& data) {
+    uint8_t* input, uint32_t* outLength, const std::vector<uint8_t>& data) {
   OsuHalExtn::OsuApduMode halMode = NON_OSU_MODE;
   size_t length = data.size();
 
