@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018 NXP
+ *  Copyright 2018,2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -999,6 +999,10 @@ static int phNxpEse_readPacket(void* pDevHandle, uint8_t* pBuffer,
  *
  ******************************************************************************/
 ESESTATUS phNxpEse_WriteFrame(uint32_t data_len, const uint8_t* p_data) {
+  if (data_len > MAX_DATA_LEN) {
+    ALOGE("%s Data length causes oob write error", __FUNCTION__);
+    return ESESTATUS_FAILED;
+  }
   ESESTATUS status = ESESTATUS_INVALID_PARAMETER;
   int32_t dwNoBytesWrRd = 0;
   ALOGD_IF(ese_debug_enabled, "Enter %s ", __FUNCTION__);
