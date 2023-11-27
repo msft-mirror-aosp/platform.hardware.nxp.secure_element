@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018-2020,2022 NXP
+ *  Copyright 2018-2020,2022-2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -41,10 +41,10 @@
 #define NAME_NXP_VISO_DPD_ENABLED "NXP_VISO_DPD_ENABLED"
 #define NAME_NXP_NAD_POLL_RETRY_TIME "NXP_NAD_POLL_RETRY_TIME"
 #define NAME_RNACK_RETRY_DELAY "RNACK_RETRY_DELAY"
-#define NAME_NXP_P61_JCOP_DEFAULT_INTERFACE "NXP_P61_JCOP_DEFAULT_INTERFACE"
 #define NAME_NXP_ESE_IFSD_VALUE "NXP_ESE_IFSD_VALUE"
 #define NAME_NXP_EUICC_IFSD_VALUE "NXP_EUICC_IFSD_VALUE"
 #define NAME_NXP_P61_COLD_RESET_INTERFACE "NXP_P61_COLD_RESET_INTERFACE"
+#define NAME_NXP_ESE_GPIO_RESET "NXP_ESE_GPIO_RESET"
 #define NAME_NXP_OS_VERSION "NXP_OS_VERSION"
 #define NAME_NXP_WTX_NTF_COUNT "NXP_WTX_NTF_COUNT"
 #define NAME_NXP_OSU_MAX_WTX_COUNT "NXP_OSU_MAX_WTX_COUNT"
@@ -60,8 +60,6 @@ class EseConfig {
                                std::string default_value);
   static unsigned getUnsigned(const std::string& key);
   static unsigned getUnsigned(const std::string& key, unsigned default_value);
-  static std::vector<uint8_t> getBytes(const std::string& key);
-  static void clear();
 
  private:
   static EseConfig& getInstance();
