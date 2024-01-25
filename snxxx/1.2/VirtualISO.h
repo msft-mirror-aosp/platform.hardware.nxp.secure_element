@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018-2020,2022 NXP
+ *  Copyright 2018-2020,2022-2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@
 #include <android-base/stringprintf.h>
 #include <android/hardware/secure_element/1.0/types.h>
 #include <android/hardware/secure_element/1.2/ISecureElement.h>
+#include <android/binder_manager.h>
+#include <android/binder_process.h>
 #include <hardware/hardware.h>
 #include <hidl/MQDescriptor.h>
 #include <hidl/Status.h>

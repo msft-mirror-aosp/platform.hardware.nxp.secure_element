@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018-2022 NXP
+ *  Copyright 2018-2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -122,7 +122,8 @@ typedef enum phNxpEseProto7816_TransceiveStates {
  */
 typedef enum phNxpEseProto7816_ResetType {
   RESET_TYPE_NONE,
-  RESET_TYPE_RECOVERY
+  RESET_TYPE_RECOVERY,
+  RESET_TYPE_OS_RESET
 } phNxpEseProto7816_ResetType_t;
 
 /*!
@@ -502,6 +503,10 @@ typedef struct phNxpEseProto7816_PCB_bits {
  * \brief OS version on SE for SN220
  */
 #define PH_SE_OS_VERSION_21 0x21
+/*!
+ * \brief OS version on SE for SN300
+ */
+#define PH_SE_OS_VERSION_30 0x30
 /*!
  * \brief Default wait extension notification interval
  */
