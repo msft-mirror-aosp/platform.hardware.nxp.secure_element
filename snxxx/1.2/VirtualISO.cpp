@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018-2022 NXP
+ *  Copyright 2018-2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,9 +17,9 @@
  ******************************************************************************/
 #include "VirtualISO.h"
 
-#include "NxpEse.h"
 #include "SecureElement.h"
 #ifdef NXP_BOOTTIME_UPDATE
+#include "NxpEse.h"
 #include "eSEClient.h"
 #endif
 #include <android-base/logging.h>
@@ -42,7 +42,9 @@ namespace implementation {
 #define DEFAULT_BASIC_CHANNEL 0x00
 
 using ::android::hardware::secure_element::V1_2::ISecureElement;
+#ifdef NXP_BOOTTIME_UPDATE
 using vendor::nxp::nxpese::V1_0::implementation::NxpEse;
+#endif
 
 typedef struct gsTransceiveBuffer {
   phNxpEse_data cmdData;
@@ -214,7 +216,7 @@ Return<void> VirtualISO::transmit(const hidl_vec<uint8_t>& data,
   }
   status = phNxpEse_ResetEndPoint_Cntxt(1);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
   }
 
   _hidl_cb(result);
@@ -328,7 +330,7 @@ Return<void> VirtualISO::openLogicalChannel(const hidl_vec<uint8_t>& aid,
     send the callback and return*/
     status = phNxpEse_ResetEndPoint_Cntxt(1);
     if (status != ESESTATUS_SUCCESS) {
-      LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+      LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     }
     _hidl_cb(resApduBuff, sestatus);
     return Void();
@@ -413,7 +415,7 @@ Return<void> VirtualISO::openLogicalChannel(const hidl_vec<uint8_t>& aid,
   }
   status = phNxpEse_ResetEndPoint_Cntxt(1);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
   }
   _hidl_cb(resApduBuff, sestatus);
   phNxpEse_free(cpdu.pdata);
@@ -507,7 +509,7 @@ Return<void> VirtualISO::openBasicChannel(const hidl_vec<uint8_t>& aid,
   }
   status = phNxpEse_ResetEndPoint_Cntxt(1);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
   }
   if (sestatus != SecureElementStatus::SUCCESS) {
     SecureElementStatus closeChannelStatus =
@@ -562,7 +564,7 @@ VirtualISO::internalCloseChannel(uint8_t channelNumber) {
     }
     status = phNxpEse_ResetEndPoint_Cntxt(1);
     if (status != ESESTATUS_SUCCESS) {
-      LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+      LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     }
     if (mOpenedChannels[channelNumber]) {
       mOpenedChannels[channelNumber] = false;
@@ -611,7 +613,7 @@ VirtualISO::closeChannel(uint8_t channelNumber) {
     }
     status = phNxpEse_ResetEndPoint_Cntxt(1);
     if (status != ESESTATUS_SUCCESS) {
-      LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+      LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     }
     if (mOpenedChannels[channelNumber]) {
       mOpenedChannels[channelNumber] = false;
@@ -667,7 +669,7 @@ VirtualISO::seHalDeInit() {
   if (ESESTATUS_SUCCESS != deInitStatus) mIsDeInitDone = false;
   status = phNxpEse_ResetEndPoint_Cntxt(1);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     mIsDeInitDone = false;
   }
   status = phNxpEse_close(deInitStatus);
