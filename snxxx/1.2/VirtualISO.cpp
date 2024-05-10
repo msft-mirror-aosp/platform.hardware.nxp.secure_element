@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018-2021 NXP
+ *  Copyright 2018-2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -17,12 +17,15 @@
  ******************************************************************************/
 #include "VirtualISO.h"
 
-#include "NxpEse.h"
 #include "SecureElement.h"
 #ifdef NXP_BOOTTIME_UPDATE
+#include "NxpEse.h"
 #include "eSEClient.h"
 #endif
 #include <android-base/logging.h>
+// Undefined LOG_TAG as it is also defined in log.h
+#undef LOG_TAG
+#include <memunreachable/memunreachable.h>
 
 #include "hal_nxpese.h"
 #include "phNxpEse_Apdu_Api.h"
@@ -39,7 +42,9 @@ namespace implementation {
 #define DEFAULT_BASIC_CHANNEL 0x00
 
 using ::android::hardware::secure_element::V1_2::ISecureElement;
+#ifdef NXP_BOOTTIME_UPDATE
 using vendor::nxp::nxpese::V1_0::implementation::NxpEse;
+#endif
 
 typedef struct gsTransceiveBuffer {
   phNxpEse_data cmdData;
@@ -105,7 +110,7 @@ Return<void> VirtualISO::init(
     status = phNxpEse_close(deInitStatus);
   }
   if (status == ESESTATUS_SUCCESS && mIsInitDone) {
-    mMaxChannelCount = (GET_CHIP_OS_VERSION() >= OS_VERSION_6_2) ? 0x0C : 0x04;
+    mMaxChannelCount = (GET_CHIP_OS_VERSION() > OS_VERSION_6_2) ? 0x0C : 0x04;
     mOpenedChannels.resize(mMaxChannelCount, false);
     clientCallback->onStateChange(true);
   } else {
@@ -162,7 +167,7 @@ Return<void> VirtualISO::init_1_1(
     status = phNxpEse_close(deInitStatus);
   }
   if (status == ESESTATUS_SUCCESS && mIsInitDone) {
-    mMaxChannelCount = (GET_CHIP_OS_VERSION() >= OS_VERSION_6_2) ? 0x0C : 0x04;
+    mMaxChannelCount = (GET_CHIP_OS_VERSION() > OS_VERSION_6_2) ? 0x0C : 0x04;
     mOpenedChannels.resize(mMaxChannelCount, false);
     clientCallback->onStateChange_1_1(true, "NXP VISIO HAL init ok");
   } else {
@@ -211,7 +216,7 @@ Return<void> VirtualISO::transmit(const hidl_vec<uint8_t>& data,
   }
   status = phNxpEse_ResetEndPoint_Cntxt(1);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
   }
 
   _hidl_cb(result);
@@ -234,6 +239,18 @@ Return<void> VirtualISO::openLogicalChannel(const hidl_vec<uint8_t>& aid,
 
   LogicalChannelResponse resApduBuff;
 
+  if (GET_CHIP_OS_VERSION() <= OS_VERSION_6_2) {
+    uint8_t maxLogicalChannelSupported = mMaxChannelCount - 1;
+    uint8_t openedLogicalChannelCount = mOpenedchannelCount;
+    if (mOpenedChannels[0]) openedLogicalChannelCount--;
+
+    if (openedLogicalChannelCount >= maxLogicalChannelSupported) {
+      LOG(ERROR) << "%s: Reached Max supported Logical Channel" << __func__;
+      _hidl_cb(resApduBuff, SecureElementStatus::CHANNEL_NOT_AVAILABLE);
+      return Void();
+    }
+  }
+
   LOG(INFO) << "Acquired the lock in VISO openLogicalChannel";
 
   resApduBuff.channelNumber = 0xff;
@@ -248,7 +265,7 @@ Return<void> VirtualISO::openLogicalChannel(const hidl_vec<uint8_t>& aid,
   }
 
   if (mOpenedChannels.size() == 0x00) {
-    mMaxChannelCount = (GET_CHIP_OS_VERSION() >= OS_VERSION_6_2) ? 0x0C : 0x04;
+    mMaxChannelCount = (GET_CHIP_OS_VERSION() > OS_VERSION_6_2) ? 0x0C : 0x04;
     mOpenedChannels.resize(mMaxChannelCount, false);
   }
 
@@ -309,11 +326,11 @@ Return<void> VirtualISO::openLogicalChannel(const hidl_vec<uint8_t>& aid,
         LOG(INFO) << "seDeInit Failed";
       }
     }
-    /*If manageChanle is failed in any of above cases
+    /*If manageChannel is failed in any of above cases
     send the callback and return*/
     status = phNxpEse_ResetEndPoint_Cntxt(1);
     if (status != ESESTATUS_SUCCESS) {
-      LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+      LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     }
     _hidl_cb(resApduBuff, sestatus);
     return Void();
@@ -329,12 +346,12 @@ Return<void> VirtualISO::openLogicalChannel(const hidl_vec<uint8_t>& aid,
 
   if ((resApduBuff.channelNumber > 0x03) &&
       (resApduBuff.channelNumber < 0x14)) {
-    /* update CLA byte accoridng to GP spec Table 11-12*/
+    /* update CLA byte according to GP spec Table 11-12*/
     cpdu.cla =
         0x40 + (resApduBuff.channelNumber - 4); /* Class of instruction */
   } else if ((resApduBuff.channelNumber > 0x00) &&
              (resApduBuff.channelNumber < 0x04)) {
-    /* update CLA byte accoridng to GP spec Table 11-11*/
+    /* update CLA byte according to GP spec Table 11-11*/
     cpdu.cla = resApduBuff.channelNumber; /* Class of instruction */
   } else {
     LOG(ERROR) << StringPrintf("%s: Invalid Channel no: %02x", __func__,
@@ -398,7 +415,7 @@ Return<void> VirtualISO::openLogicalChannel(const hidl_vec<uint8_t>& aid,
   }
   status = phNxpEse_ResetEndPoint_Cntxt(1);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
   }
   _hidl_cb(resApduBuff, sestatus);
   phNxpEse_free(cpdu.pdata);
@@ -427,7 +444,7 @@ Return<void> VirtualISO::openBasicChannel(const hidl_vec<uint8_t>& aid,
   }
 
   if (mOpenedChannels.size() == 0x00) {
-    mMaxChannelCount = (GET_CHIP_OS_VERSION() >= OS_VERSION_6_2) ? 0x0C : 0x04;
+    mMaxChannelCount = (GET_CHIP_OS_VERSION() > OS_VERSION_6_2) ? 0x0C : 0x04;
     mOpenedChannels.resize(mMaxChannelCount, false);
   }
 
@@ -492,7 +509,7 @@ Return<void> VirtualISO::openBasicChannel(const hidl_vec<uint8_t>& aid,
   }
   status = phNxpEse_ResetEndPoint_Cntxt(1);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
   }
   if (sestatus != SecureElementStatus::SUCCESS) {
     SecureElementStatus closeChannelStatus =
@@ -524,9 +541,9 @@ VirtualISO::internalCloseChannel(uint8_t channelNumber) {
     phNxpEse_memset(&cpdu, 0x00, sizeof(phNxpEse_7816_cpdu_t));
     phNxpEse_memset(&rpdu, 0x00, sizeof(phNxpEse_7816_rpdu_t));
     cpdu.cla = channelNumber; /* Class of instruction */
-    // For Suplementary Channel update CLA byte according to GP
+    // For Supplementary Channel update CLA byte according to GP
     if ((channelNumber > 0x03) && (channelNumber < 0x14)) {
-      /* update CLA byte accoridng to GP spec Table 11-12*/
+      /* update CLA byte according to GP spec Table 11-12*/
       cpdu.cla = 0x40 + (channelNumber - 4); /* Class of instruction */
     }
     cpdu.ins = 0x70;          /* Instruction code */
@@ -547,7 +564,7 @@ VirtualISO::internalCloseChannel(uint8_t channelNumber) {
     }
     status = phNxpEse_ResetEndPoint_Cntxt(1);
     if (status != ESESTATUS_SUCCESS) {
-      LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+      LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     }
     if (mOpenedChannels[channelNumber]) {
       mOpenedChannels[channelNumber] = false;
@@ -596,7 +613,7 @@ VirtualISO::closeChannel(uint8_t channelNumber) {
     }
     status = phNxpEse_ResetEndPoint_Cntxt(1);
     if (status != ESESTATUS_SUCCESS) {
-      LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+      LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     }
     if (mOpenedChannels[channelNumber]) {
       mOpenedChannels[channelNumber] = false;
@@ -652,13 +669,12 @@ VirtualISO::seHalDeInit() {
   if (ESESTATUS_SUCCESS != deInitStatus) mIsDeInitDone = false;
   status = phNxpEse_ResetEndPoint_Cntxt(1);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     mIsDeInitDone = false;
   }
   status = phNxpEse_close(deInitStatus);
   if (status == ESESTATUS_SUCCESS && mIsDeInitDone) {
     sestatus = SecureElementStatus::SUCCESS;
-    ;
   } else {
     LOG(ERROR) << "seHalDeInit: Failed";
   }
@@ -690,7 +706,7 @@ VirtualISO::reset() {
       sestatus = SecureElementStatus::SUCCESS;
       if (mOpenedChannels.size() == 0x00) {
         mMaxChannelCount =
-            (GET_CHIP_OS_VERSION() >= OS_VERSION_6_2) ? 0x0C : 0x04;
+            (GET_CHIP_OS_VERSION() > OS_VERSION_6_2) ? 0x0C : 0x04;
         mOpenedChannels.resize(mMaxChannelCount, false);
       }
       for (uint8_t xx = 0; xx < mMaxChannelCount; xx++) {
@@ -702,6 +718,13 @@ VirtualISO::reset() {
   }
   LOG(ERROR) << "%s: Exit" << __func__;
   return sestatus;
+}
+
+Return<void> VirtualISO::debug(const hidl_handle& /* fd */,
+                               const hidl_vec<hidl_string>& /* options */) {
+  LOG(INFO) << "\n SecureElement-VirtualISO HAL MemoryLeak Info = \n"
+            << ::android::GetUnreachableMemoryString(true, 10000).c_str();
+  return Void();
 }
 
 }  // namespace implementation

@@ -1,6 +1,6 @@
 /*******************************************************************************
  *
- *  Copyright 2018-2020 NXP
+ *  Copyright 2018-2020, 2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -16,16 +16,14 @@
  *
  ******************************************************************************/
 
-#include <android/hardware/secure_element/1.0/ISecureElementHalCallback.h>
-
-#include "../../../secure_element_extns/inc/eSEClientIntf.h"
+#ifdef NXP_BOOTTIME_UPDATE
+#include "eSEClientIntf.h"
 #include "phNxpEse_Api.h"
 
 #ifndef ESE_UPDATE_2_H_
 #define ESE_UPDATE_2_H_
 
 extern ese_update_state_t ese_update;
-using ::android::hardware::secure_element::V1_0::ISecureElementHalCallback;
 
 void checkEseClientUpdate();
 
@@ -40,3 +38,4 @@ typedef enum {
 } SEDomainID;
 
 #endif /* ESE_UPDATE_2_H_ */
+#endif /* NXP_BOOTTIME_UPDATE */

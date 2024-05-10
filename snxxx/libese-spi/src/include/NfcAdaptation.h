@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2020 NXP
+ *  Copyright 2020,2022-2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
  *
  ******************************************************************************/
 #pragma once
+#include <aidl/vendor/nxp/nxpnfc_aidl/INxpNfc.h>
 #include <android/hardware/nfc/1.0/types.h>
 #include <phEseStatus.h>
 #include <phNxpEseFeatures.h>
@@ -24,7 +25,8 @@
 #include <vendor/nxp/nxpnfc/2.0/INxpNfc.h>
 
 #include "hal_nxpese.h"
-using vendor::nxp::nxpnfc::V2_0::INxpNfc;
+using INxpNfc = vendor::nxp::nxpnfc::V2_0::INxpNfc;
+using INxpNfcAidl = ::aidl::vendor::nxp::nxpnfc_aidl::INxpNfc;
 
 class ThreadMutex {
  public:
@@ -67,10 +69,12 @@ class AutoThreadMutex {
 class NfcAdaptation {
  public:
   virtual ~NfcAdaptation();
-  void Initialize();
   static NfcAdaptation& GetInstance();
   static ESESTATUS resetEse(uint64_t level);
+  void Initialize();
+#ifdef NXP_BOOTTIME_UPDATE
   static ESESTATUS setEseUpdateState(void* p_data);
+#endif
   ese_nxp_IoctlInOutData_t* mCurrentIoctlData;
 
  private:
@@ -81,4 +85,5 @@ class NfcAdaptation {
   ThreadCondVar mCondVar;
   static ThreadCondVar mHalIoctlEvent;
   static android::sp<INxpNfc> mHalNxpNfc;
+  static std::shared_ptr<INxpNfcAidl> mAidlHalNxpNfc;
 };

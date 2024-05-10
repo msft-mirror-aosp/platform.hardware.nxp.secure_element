@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018-2021 NXP
+ *  Copyright 2018-2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -99,17 +99,26 @@ Return<void> SecureElement::init(
 
   status = phNxpEse_open(initParams);
   if (status == ESESTATUS_SUCCESS || ESESTATUS_BUSY == status) {
+    ESESTATUS initStatus = ESESTATUS_SUCCESS;
     ESESTATUS deInitStatus = ESESTATUS_SUCCESS;
-    if (ESESTATUS_SUCCESS == phNxpEse_SetEndPoint_Cntxt(0) &&
-        ESESTATUS_SUCCESS == phNxpEse_init(initParams)) {
-      if (ESESTATUS_SUCCESS == phNxpEse_ResetEndPoint_Cntxt(0)) {
-        LOG(INFO) << "ESE SPI init complete!!!";
-        mIsInitDone = true;
+    if (ESESTATUS_SUCCESS == phNxpEse_SetEndPoint_Cntxt(0)) {
+      initStatus = phNxpEse_init(initParams);
+      if (initStatus == ESESTATUS_SUCCESS) {
+        if (ESESTATUS_SUCCESS == phNxpEse_ResetEndPoint_Cntxt(0)) {
+          LOG(INFO) << "ESE SPI init complete!!!";
+          mIsInitDone = true;
+        }
+        deInitStatus = phNxpEse_deInit();
+        if (ESESTATUS_SUCCESS != deInitStatus) mIsInitDone = false;
       }
-      deInitStatus = phNxpEse_deInit();
-      if (ESESTATUS_SUCCESS != deInitStatus) mIsInitDone = false;
     }
     status = phNxpEse_close(deInitStatus);
+    /*Enable terminal post recovery(i.e. close success) from transmit failure */
+    if (status == ESESTATUS_SUCCESS &&
+        (initStatus == ESESTATUS_TRANSCEIVE_FAILED ||
+         initStatus == ESESTATUS_FAILED)) {
+      mIsInitDone = true;
+    }
   }
   if (status == ESESTATUS_SUCCESS && mIsInitDone) {
     mMaxChannelCount = (GET_CHIP_OS_VERSION() >= OS_VERSION_6_2) ? 0x0C : 0x04;
@@ -158,17 +167,26 @@ Return<void> SecureElement::init_1_1(
 
   status = phNxpEse_open(initParams);
   if (status == ESESTATUS_SUCCESS || ESESTATUS_BUSY == status) {
+    ESESTATUS initStatus = ESESTATUS_SUCCESS;
     ESESTATUS deInitStatus = ESESTATUS_SUCCESS;
-    if (ESESTATUS_SUCCESS == phNxpEse_SetEndPoint_Cntxt(0) &&
-        ESESTATUS_SUCCESS == phNxpEse_init(initParams)) {
-      if (ESESTATUS_SUCCESS == phNxpEse_ResetEndPoint_Cntxt(0)) {
-        LOG(INFO) << "ESE SPI init complete!!!";
-        mIsInitDone = true;
+    if (ESESTATUS_SUCCESS == phNxpEse_SetEndPoint_Cntxt(0)) {
+      initStatus = phNxpEse_init(initParams);
+      if (initStatus == ESESTATUS_SUCCESS) {
+        if (ESESTATUS_SUCCESS == phNxpEse_ResetEndPoint_Cntxt(0)) {
+          LOG(INFO) << "ESE SPI init complete!!!";
+          mIsInitDone = true;
+        }
+        deInitStatus = phNxpEse_deInit();
+        if (ESESTATUS_SUCCESS != deInitStatus) mIsInitDone = false;
       }
-      deInitStatus = phNxpEse_deInit();
-      if (ESESTATUS_SUCCESS != deInitStatus) mIsInitDone = false;
     }
     status = phNxpEse_close(deInitStatus);
+    /*Enable terminal post recovery(i.e. close success) from transmit failure */
+    if (status == ESESTATUS_SUCCESS &&
+        (initStatus == ESESTATUS_TRANSCEIVE_FAILED ||
+         initStatus == ESESTATUS_FAILED)) {
+      mIsInitDone = true;
+    }
   }
   if (status == ESESTATUS_SUCCESS && mIsInitDone) {
     mMaxChannelCount = (GET_CHIP_OS_VERSION() >= OS_VERSION_6_2) ? 0x0C : 0x04;
@@ -202,7 +220,7 @@ Return<void> SecureElement::getAtr(getAtr_cb _hidl_cb) {
   }
   status = phNxpEse_SetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "Endpoint set failed";
+    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed";
   }
   status = phNxpEse_getAtr(&atrData);
   if (status != ESESTATUS_SUCCESS) {
@@ -216,7 +234,7 @@ Return<void> SecureElement::getAtr(getAtr_cb _hidl_cb) {
 
   status = phNxpEse_ResetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "Endpoint set failed";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed";
   }
 
   if (status != ESESTATUS_SUCCESS) {
@@ -277,7 +295,7 @@ Return<void> SecureElement::transmit(const hidl_vec<uint8_t>& data,
   }
   status = phNxpEse_ResetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt  failed!!!";
   }
 
   _hidl_cb(result);
@@ -302,6 +320,11 @@ Return<void> SecureElement::openLogicalChannel(const hidl_vec<uint8_t>& aid,
   LogicalChannelResponse resApduBuff;
   resApduBuff.channelNumber = 0xff;
   memset(&resApduBuff, 0x00, sizeof(resApduBuff));
+  if (aid.size() > MAX_AID_LENGTH) {
+    LOG(ERROR) << "%s: AID out of range!!!" << __func__;
+    _hidl_cb(resApduBuff, SecureElementStatus::FAILED);
+    return Void();
+  }
 
   LOG(INFO) << "Acquired the lock from SPI openLogicalChannel";
 
@@ -361,11 +384,11 @@ Return<void> SecureElement::openLogicalChannel(const hidl_vec<uint8_t>& aid,
         LOG(INFO) << "seDeInit Failed";
       }
     }
-    /*If manageChanle is failed in any of above cases
+    /*If manageChannel is failed in any of above cases
     send the callback and return*/
     status = phNxpEse_ResetEndPoint_Cntxt(0);
     if (status != ESESTATUS_SUCCESS) {
-      LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+      LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     }
     _hidl_cb(resApduBuff, sestatus);
     return Void();
@@ -381,12 +404,12 @@ Return<void> SecureElement::openLogicalChannel(const hidl_vec<uint8_t>& aid,
 
   if ((resApduBuff.channelNumber > 0x03) &&
       (resApduBuff.channelNumber < 0x14)) {
-    /* update CLA byte accoridng to GP spec Table 11-12*/
+    /* update CLA byte according to GP spec Table 11-12*/
     cpdu.cla =
         0x40 + (resApduBuff.channelNumber - 4); /* Class of instruction */
   } else if ((resApduBuff.channelNumber > 0x00) &&
              (resApduBuff.channelNumber < 0x04)) {
-    /* update CLA byte accoridng to GP spec Table 11-11*/
+    /* update CLA byte according to GP spec Table 11-11*/
     cpdu.cla = resApduBuff.channelNumber; /* Class of instruction */
   } else {
     LOG(ERROR) << StringPrintf("%s: Invalid Channel no: %02x", __func__,
@@ -453,7 +476,7 @@ Return<void> SecureElement::openLogicalChannel(const hidl_vec<uint8_t>& aid,
   }
   status = phNxpEse_ResetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
   }
   _hidl_cb(resApduBuff, sestatus);
   phNxpEse_free(cpdu.pdata);
@@ -465,11 +488,16 @@ Return<void> SecureElement::openLogicalChannel(const hidl_vec<uint8_t>& aid,
 Return<void> SecureElement::openBasicChannel(const hidl_vec<uint8_t>& aid,
                                              uint8_t p2,
                                              openBasicChannel_cb _hidl_cb) {
+  hidl_vec<uint8_t> result;
+  if (aid.size() > MAX_AID_LENGTH) {
+    LOG(ERROR) << "%s: AID out of range!!!" << __func__;
+    _hidl_cb(result, SecureElementStatus::FAILED);
+    return Void();
+  }
   AutoMutex guard(seHalLock);
   ESESTATUS status = ESESTATUS_SUCCESS;
   phNxpEse_7816_cpdu_t cpdu;
   phNxpEse_7816_rpdu_t rpdu;
-  hidl_vec<uint8_t> result;
   hidl_vec<uint8_t> ls_aid = {0xA0, 0x00, 0x00, 0x03, 0x96, 0x41, 0x4C,
                               0x41, 0x01, 0x43, 0x4F, 0x52, 0x01};
 
@@ -548,7 +576,7 @@ Return<void> SecureElement::openBasicChannel(const hidl_vec<uint8_t>& aid,
   }
   status = phNxpEse_ResetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
   }
   if (sestatus != SecureElementStatus::SUCCESS) {
     SecureElementStatus closeChannelStatus =
@@ -579,9 +607,9 @@ Return<SecureElementStatus> SecureElement::internalCloseChannel(
     phNxpEse_memset(&cpdu, 0x00, sizeof(phNxpEse_7816_cpdu_t));
     phNxpEse_memset(&rpdu, 0x00, sizeof(phNxpEse_7816_rpdu_t));
     cpdu.cla = channelNumber; /* Class of instruction */
-    // For Suplementary Channel update CLA byte according to GP
+    // For Supplementary Channel update CLA byte according to GP
     if ((channelNumber > 0x03) && (channelNumber < 0x14)) {
-      /* update CLA byte accoridng to GP spec Table 11-12*/
+      /* update CLA byte according to GP spec Table 11-12*/
       cpdu.cla = 0x40 + (channelNumber - 4); /* Class of instruction */
     }
     cpdu.ins = 0x70;          /* Instruction code */
@@ -601,7 +629,7 @@ Return<SecureElementStatus> SecureElement::internalCloseChannel(
     }
     status = phNxpEse_ResetEndPoint_Cntxt(0);
     if (status != ESESTATUS_SUCCESS) {
-      LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+      LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     }
   }
   if (channelNumber < mMaxChannelCount) {
@@ -677,7 +705,7 @@ Return<SecureElementStatus> SecureElement::seHalDeInit() {
   if (ESESTATUS_SUCCESS != deInitStatus) mIsDeInitDone = false;
   status = phNxpEse_ResetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     mIsDeInitDone = false;
   }
   status = phNxpEse_close(deInitStatus);

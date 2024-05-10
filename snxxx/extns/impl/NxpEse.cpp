@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright (C) 2018-2021 NXP Semiconductors
+ *  Copyright 2018-2023 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -15,12 +15,12 @@
  *  limitations under the License.
  *
  ******************************************************************************/
-#include "NxpEse.h"
 #ifdef NXP_BOOTTIME_UPDATE
+#include "NxpEse.h"
 #include "eSEClient.h"
-#endif
 #include <android-base/logging.h>
 #include <android-base/stringprintf.h>
+#include <memunreachable/memunreachable.h>
 
 #include "phNxpEse_Api.h"
 
@@ -165,7 +165,6 @@ exit1:
       virtualISOCallback->onStateChange(false);
   }
 }
-#ifdef NXP_BOOTTIME_UPDATE
 Return<void> NxpEse::ioctlHandler(uint64_t ioctlType,
                                   ese_nxp_IoctlInOutData_t& inpOutData) {
   switch (ioctlType) {
@@ -182,7 +181,6 @@ Return<void> NxpEse::ioctlHandler(uint64_t ioctlType,
   }
   return Void();
 }
-#endif
 
 Return<void> NxpEse::ioctl(uint64_t ioctlType,
                            const hidl_vec<uint8_t>& inOutData,
@@ -195,20 +193,16 @@ Return<void> NxpEse::ioctl(uint64_t ioctlType,
    * underlying HAL implementation since it's an inout argument*/
   memcpy(&inpOutData, pInOutData, sizeof(ese_nxp_IoctlInOutData_t));
   ESESTATUS status = phNxpEse_spiIoctl(ioctlType, &inpOutData);
-#ifdef NXP_BOOTTIME_UPDATE
   ioctlHandler(ioctlType, inpOutData);
-#endif
   /*copy data and additional fields indicating status of ioctl operation
    * and context of the caller. Then invoke the corresponding proxy callback*/
   inpOutData.out.ioctlType = ioctlType;
   inpOutData.out.result = status;
-#ifdef NXP_BOOTTIME_UPDATE
   if (ioctlType == HAL_ESE_IOCTL_GET_ESE_UPDATE_STATE) {
     inpOutData.out.data.status =
         (getJcopUpdateRequired() | (getLsUpdateRequired() << 8));
   }
-#endif
-  hidl_vec<uint8_t> outputData;
+  EseData outputData;
   outputData.setToExternal((uint8_t*)&inpOutData.out,
                            sizeof(ese_nxp_ExtnOutputData_t));
   LOG(ERROR) << "GET ESE update state2 = " << inpOutData.out.data.status;
@@ -217,9 +211,16 @@ Return<void> NxpEse::ioctl(uint64_t ioctlType,
 }
 
 // Methods from ::android::hidl::base::V1_0::IBase follow.
+Return<void> NxpEse::debug(const hidl_handle& /* fd */,
+                           const hidl_vec<hidl_string>& /* options */) {
+  LOG(INFO) << "\n SecureElement-NxpEse HAL MemoryLeak Info = \n"
+            << ::android::GetUnreachableMemoryString(true, 10000).c_str();
+  return Void();
+}
 
 }  // namespace implementation
 }  // namespace V1_0
 }  // namespace nxpese
 }  // namespace nxp
 }  // namespace vendor
+#endif //NXP_BOOTTIME_UPDATE
