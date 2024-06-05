@@ -205,7 +205,7 @@ ESESTATUS phPalEse_ioctl(phPalEse_ControlCode_t eControlCode, void* pDevHandle,
 **
 ** Description      This function  suspends execution of the calling thread for
 **                  total_time usecs(max extra delay 1 usecs) with busy wait.
-**                  Use this only for short delays (less than 500 microseconds)
+**                  Use this only for short delays (less than 500 microsecs)
 **
 ** Returns          None
 **

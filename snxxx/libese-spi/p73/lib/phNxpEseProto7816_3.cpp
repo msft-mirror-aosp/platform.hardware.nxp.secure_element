@@ -191,15 +191,6 @@ static ESESTATUS TransceiveProcess(void);
 
 /**
  * \ingroup ISO7816-3_protocol_lib
- * \brief      This internal function is used to
- *                  1. Send proprietary S-Frame command for re-sync
- *T=1 sequence at worker
- *
- */
-static ESESTATUS phNxpEseProto7816_RSync(void);
-
-/**
- * \ingroup ISO7816-3_protocol_lib
  * \brief       This function is used to send the spi hard reset command
  *
  */
@@ -889,13 +880,15 @@ static void phNxpEseProto7816_DecodeSFrameATRData(uint8_t* p_data) {
                                    (phNxpEseProto7816_3_Var.atrInfo.bgt[1]));
   NXP_LOG_ESE_D("BWT = %d ms", phNxpEseProto7816_3_Var.atrInfo.bwt[0] << 8 |
                                    phNxpEseProto7816_3_Var.atrInfo.bwt[1]);
-  NXP_LOG_ESE_D("Max supported frequency = %d Hz",
+  NXP_LOG_ESE_D("Max supported frequency = %d KHz",
                 phNxpEseProto7816_3_Var.atrInfo.maxFreq[0] << 8 |
                     phNxpEseProto7816_3_Var.atrInfo.maxFreq[1]);
   NXP_LOG_ESE_D("Checksum LRC(0)/CRC(1) supports = 0x%x",
                 phNxpEseProto7816_3_Var.atrInfo.checksum);
   NXP_LOG_ESE_D("DefaultIFSC = %d bytes",
                 phNxpEseProto7816_3_Var.atrInfo.defaultIFSC);
+  NXP_LOG_ESE_D("Number of logical connections supported = %d",
+                phNxpEseProto7816_3_Var.atrInfo.numChannels);
   NXP_LOG_ESE_D("Max IFSC = %d bytes",
                 phNxpEseProto7816_3_Var.atrInfo.maxIFSC[0] << 8 |
                     phNxpEseProto7816_3_Var.atrInfo.maxIFSC[1]);
@@ -916,7 +909,11 @@ static void phNxpEseProto7816_DecodeSFrameATRData(uint8_t* p_data) {
                                                              : "OSU Mode"));
   }
   if (phNxpEseProto7816_3_Var.atrInfo.vendorID[PH_PROTO_ATR_RSP_VENDOR_ID_LEN -
-                                               1] >= PH_SE_OS_VERSION_21) {
+                                               1] >= PH_SE_OS_VERSION_30) {
+    phNxpEse_setOsVersion(OS_VERSION_8_9);
+  } else if (phNxpEseProto7816_3_Var.atrInfo
+                 .vendorID[PH_PROTO_ATR_RSP_VENDOR_ID_LEN - 1] >=
+             PH_SE_OS_VERSION_21) {
     phNxpEse_setOsVersion(OS_VERSION_6_3);
   } else if (phNxpEseProto7816_3_Var.atrInfo
                  .vendorID[PH_PROTO_ATR_RSP_VENDOR_ID_LEN - 1] >=
@@ -990,20 +987,86 @@ static void phNxpEseProto7816_DecodeSFrameSecureTimerData(uint8_t* p_data) {
 }
 
 /******************************************************************************
+ * Function         phNxpEseProto7816_SetTxstate
+ *
+ * Description      This internal function is used to set the Tranceive state
+ *                  of T=1 Proto stack. Accordingly, it will set the params
+ *                  for next transceive.
+ * Returns          void.
+ *
+ ******************************************************************************/
+static void phNxpEseProto7816_SetTxstate(
+    phNxpEseProto7816_TransceiveStates_t state) {
+  phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.FrameType = SFRAME;
+  phNxpEseProto7816_3_Var.phNxpEseProto7816_nextTransceiveState = state;
+  switch (state) {
+    case SEND_S_IFS_ADJ:
+      phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.SframeInfo.sFrameType =
+          IFS_REQ;
+      break;
+    case SEND_S_ATR_REQ:
+      phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.SframeInfo.sFrameType =
+          ATR_REQ;
+      break;
+    default:
+      NXP_LOG_ESE_E("%s: Wrong transceive state received ", __FUNCTION__);
+      break;
+  }
+}
+/******************************************************************************
+ * Function         phNxpEseProto7816_DecodeAtrRsp
+ *
+ * Description      The function phNxpEseProto7816_DecodeFrame() shall call
+ *                  this function up on receiving the ATR RSP
+ *                  1. If Last sent frame is S-Frame then send back the correct
+ *                    S-frame response.
+ *                  2. If Last sent frame is I-Frame then trigger the recovery
+ *                    RESET_TYPE_OS_RESET.
+ * Returns          On success returns ESESTATUS_SUCCESS else ESESTATUS_FAILED.
+ *
+ ******************************************************************************/
+static ESESTATUS phNxpEseProto7816_DecodeAtrRsp(uint8_t* p_data) {
+  ESESTATUS status = ESESTATUS_SUCCESS;
+  // This is 4ms delay and delay of 1ms in also there in line 1401 before
+  // next Tx
+  phNxpEse_Sleep(HARD_RESET_RES_DELAY);
+  if (phNxpEseProto7816_3_Var.phNxpEseLastTx_Cntx.FrameType == IFRAME) {
+    // Applicable only for SN300
+    phNxpEseProto7816_SetTxstate(SEND_S_ATR_REQ);
+    phNxpEseProto7816_3_Var.reset_type = RESET_TYPE_OS_RESET;
+  } else {
+    if (p_data[PH_PROPTO_7816_FRAME_LENGTH_OFFSET] > 0) {
+      /*Response status either success/fail*/
+      if (!p_data[PH_PROPTO_7816_FRAME_LENGTH_OFFSET + 1])
+        status = ESESTATUS_FAILED;
+      else
+        status = ESESTATUS_SUCCESS;
+    }
+    phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.FrameType = UNKNOWN;
+    phNxpEseProto7816_3_Var.phNxpEseProto7816_nextTransceiveState = IDLE_STATE;
+  }
+  phNxpEseProto7816_3_Var.phNxpEseRx_Cntx.lastRcvdSframeInfo.sFrameType =
+      HARD_RESET_RSP;
+  return status;
+}
+/******************************************************************************
  * Function         phNxpEseProto7816_DecodeFrame
  *
  * Description      This internal function is used to
  *                  1. Identify the received frame
  *                  2. If the received frame is I-frame with expected sequence
- number, store it or else send R-NACK
-                    3. If the received frame is R-frame,
-                       3.1 R-ACK with expected seq. number: Send the next
- chained I-frame
-                       3.2 R-ACK with different sequence number: Send the R-Nack
-                       3.3 R-NACK: Re-send the last frame
-                    4. If the received frame is S-frame, send back the correct
- S-frame response.
- * Returns          On success return true or else false.
+ *                     number, store it or else send R-NACK
+ *                  3. If the received frame is R-frame,
+ *                     3.1 R-ACK with expected seq. number: Send the next
+ *                     chained I-frame
+ *                     3.2 R-ACK with different sequence number: Send the R-Nack
+ *                     3.3 R-NACK: Re-send the last frame
+ *                   4. If the received frame is S-frame,
+ *                     4.1 Last sent frame is S-Frame then send back the
+ *                         correct S-frame response.
+ *                     4.2 Last sent frame is I-Frame then trigger the recovery
+ *                         RESET_TYPE_OS_RESET.
+ * Returns          On success returns true else false.
  *
  ******************************************************************************/
 static ESESTATUS phNxpEseProto7816_DecodeFrame(uint8_t* p_data,
@@ -1289,6 +1352,8 @@ static ESESTATUS phNxpEseProto7816_DecodeFrame(uint8_t* p_data,
         phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.FrameType = UNKNOWN;
         phNxpEseProto7816_3_Var.phNxpEseProto7816_nextTransceiveState =
             IDLE_STATE;
+        if (phNxpEseProto7816_3_Var.reset_type == RESET_TYPE_OS_RESET)
+          status = ESESTATUS_FAILED;
         break;
       case ABORT_REQ:
         phNxpEseProto7816_3_Var.phNxpEseRx_Cntx.lastRcvdSframeInfo.sFrameType =
@@ -1377,11 +1442,7 @@ static ESESTATUS phNxpEseProto7816_DecodeFrame(uint8_t* p_data,
           phNxpEseProto7816_3_Var.currentIFSDSize = tmpcurrentIFSDSize;
           phNxpEseProto7816_3_Var.phNxpEseProto7816_CurrentState =
               PH_NXP_ESE_PROTO_7816_TRANSCEIVE;
-          phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.FrameType = SFRAME;
-          phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.SframeInfo.sFrameType =
-              IFS_REQ;
-          phNxpEseProto7816_3_Var.phNxpEseProto7816_nextTransceiveState =
-              SEND_S_IFS_ADJ;
+          phNxpEseProto7816_SetTxstate(SEND_S_IFS_ADJ);
         } else {
           phNxpEseProto7816_ResetProtoParams();
           phNxpEseProto7816_3_Var.phNxpEseRx_Cntx.lastRcvdSframeInfo
@@ -1414,21 +1475,7 @@ static ESESTATUS phNxpEseProto7816_DecodeFrame(uint8_t* p_data,
             HARD_RESET_REQ;
         break;
       case HARD_RESET_RSP:
-        // This is 4ms delay and delay of 1ms in also there in line 1401 before
-        // next Tx
-        phNxpEse_Sleep(HARD_RESET_RES_DELAY);
-        phNxpEseProto7816_3_Var.phNxpEseRx_Cntx.lastRcvdSframeInfo.sFrameType =
-            HARD_RESET_RSP;
-        if (p_data[PH_PROPTO_7816_FRAME_LENGTH_OFFSET] > 0) {
-          /*Response status either success/fail*/
-          if (!p_data[PH_PROPTO_7816_FRAME_LENGTH_OFFSET + 1])
-            status = ESESTATUS_FAILED;
-          else
-            status = ESESTATUS_SUCCESS;
-        }
-        phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.FrameType = UNKNOWN;
-        phNxpEseProto7816_3_Var.phNxpEseProto7816_nextTransceiveState =
-            IDLE_STATE;
+        status = phNxpEseProto7816_DecodeAtrRsp(p_data);
         break;
       case ATR_RSP:
         phNxpEseProto7816_3_Var.phNxpEseRx_Cntx.lastRcvdSframeInfo.sFrameType =
@@ -1441,9 +1488,13 @@ static ESESTATUS phNxpEseProto7816_DecodeFrame(uint8_t* p_data,
         } else {
           phNxpEse_setOsVersion(OS_VERSION_4_0);
         }
-        phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.FrameType = UNKNOWN;
-        phNxpEseProto7816_3_Var.phNxpEseProto7816_nextTransceiveState =
-            IDLE_STATE;
+        if (phNxpEseProto7816_3_Var.reset_type == RESET_TYPE_OS_RESET) {
+          phNxpEseProto7816_SetTxstate(SEND_S_IFS_ADJ);
+        } else {
+          phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.FrameType = UNKNOWN;
+          phNxpEseProto7816_3_Var.phNxpEseProto7816_nextTransceiveState =
+              IDLE_STATE;
+        }
         break;
       default:
         NXP_LOG_ESE_E("%s Wrong S-Frame Received", __FUNCTION__);
@@ -1806,29 +1857,6 @@ static void printCmdRspTimeDuration(ESESTATUS status, uint32_t cmdLen,
 }
 
 /******************************************************************************
- * Function         phNxpEseProto7816_RSync
- *
- * Description      This function is used to send the RSync command
- *
- * Returns          On success return true or else false.
- *
- ******************************************************************************/
-static ESESTATUS phNxpEseProto7816_RSync(void) {
-  ESESTATUS status = ESESTATUS_FAILED;
-  phNxpEseProto7816_3_Var.phNxpEseProto7816_CurrentState =
-      PH_NXP_ESE_PROTO_7816_TRANSCEIVE;
-  /* send the end of session s-frame */
-  phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.FrameType = SFRAME;
-  phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.SframeInfo.sFrameType =
-      RESYNCH_REQ;
-  phNxpEseProto7816_3_Var.phNxpEseProto7816_nextTransceiveState = SEND_S_RSYNC;
-  status = TransceiveProcess();
-  phNxpEseProto7816_3_Var.phNxpEseProto7816_CurrentState =
-      PH_NXP_ESE_PROTO_7816_IDLE;
-  return status;
-}
-
-/******************************************************************************
  * Function         phNxpEseProto7816_HardReset
  *
  * Description      This function is used to send the spi hard reset command
@@ -1925,17 +1953,12 @@ ESESTATUS phNxpEseProto7816_Reset(void) {
   ESESTATUS status = ESESTATUS_FAILED;
   /* Resetting host protocol instance */
   phNxpEseProto7816_ResetProtoParams();
-  if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-    status = phNxpEseProto7816_HardReset();
-    if (status == ESESTATUS_SUCCESS) {
-      /* Updating the ATR information(IFS,..) to 7816 stack */
-      phNxpEse_data atrRsp;
-      phNxpEseProto7816_getAtr(&atrRsp);
-      phNxpEse_free(atrRsp.p_data);
-    }
-  } else {
-    /* Resynchronising ESE protocol instance */
-    status = phNxpEseProto7816_RSync();
+  status = phNxpEseProto7816_HardReset();
+  if (status == ESESTATUS_SUCCESS) {
+    /* Updating the ATR information(IFS,..) to 7816 stack */
+    phNxpEse_data atrRsp;
+    phNxpEseProto7816_getAtr(&atrRsp);
+    phNxpEse_free(atrRsp.p_data);
   }
   return status;
 }
@@ -1967,16 +1990,12 @@ ESESTATUS phNxpEseProto7816_Open(phNxpEseProto7816InitParam_t initParam) {
     }
   } else /* Initialisation condition to achieve usecases like JCOP download */
   {
-    if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-      status = phNxpEseProto7816_HardReset();
-      /* Updating the ATR information (Eg: IFS,..) to 7816 stack */
-      if (status == ESESTATUS_SUCCESS) {
-        phNxpEse_data atrRsp;
-        phNxpEseProto7816_getAtr(&atrRsp);
-        phNxpEse_free(atrRsp.p_data);
-      }
-    } else {
-      status = phNxpEseProto7816_RSync();
+    status = phNxpEseProto7816_HardReset();
+    /* Updating the ATR information (Eg: IFS,..) to 7816 stack */
+    if (status == ESESTATUS_SUCCESS) {
+      phNxpEse_data atrRsp;
+      phNxpEseProto7816_getAtr(&atrRsp);
+      phNxpEse_free(atrRsp.p_data);
     }
   }
   return status;
@@ -2134,10 +2153,7 @@ ESESTATUS phNxpEseProto7816_SetIfs(uint16_t IFS_Size) {
   }
   phNxpEseProto7816_3_Var.phNxpEseProto7816_CurrentState =
       PH_NXP_ESE_PROTO_7816_TRANSCEIVE;
-  phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.FrameType = SFRAME;
-  phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.SframeInfo.sFrameType = IFS_REQ;
-  phNxpEseProto7816_3_Var.phNxpEseProto7816_nextTransceiveState =
-      SEND_S_IFS_ADJ;
+  phNxpEseProto7816_SetTxstate(SEND_S_IFS_ADJ);
   status = TransceiveProcess();
   if (ESESTATUS_FAILED == status) {
     /* reset all the structures */
@@ -2208,11 +2224,7 @@ ESESTATUS phNxpEseProto7816_getAtr(phNxpEse_data* pATRRsp) {
   NXP_LOG_ESE_D("Enter %s ", __FUNCTION__);
   phNxpEseProto7816_3_Var.phNxpEseProto7816_CurrentState =
       PH_NXP_ESE_PROTO_7816_TRANSCEIVE;
-  phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.FrameType = SFRAME;
-
-  phNxpEseProto7816_3_Var.phNxpEseNextTx_Cntx.SframeInfo.sFrameType = ATR_REQ;
-  phNxpEseProto7816_3_Var.phNxpEseProto7816_nextTransceiveState =
-      SEND_S_ATR_REQ;
+  phNxpEseProto7816_SetTxstate(SEND_S_ATR_REQ);
   status = TransceiveProcess();
   if (ESESTATUS_FAILED == status) {
     /* reset all the structures */

@@ -50,6 +50,19 @@ static std::vector<uint8_t> gsRspDataBuff(256);
 std::shared_ptr<ISecureElementCallback> SecureElement::mCb = nullptr;
 AIBinder_DeathRecipient* clientDeathRecipient = nullptr;
 std::vector<bool> SecureElement::mOpenedChannels;
+static const std::vector<std::vector<uint8_t>> kWeaverAIDs = {
+    {0xA0, 0x00, 0x00, 0x03, 0x96, 0x10, 0x10},  // Primary AID
+    {0xA0, 0x00, 0x00, 0x03, 0x96, 0x54, 0x53, 0x00, 0x00, 0x00, 0x01, 0x00,
+     0x23, 0x00, 0x00, 0x00},  // Alternate AID
+};
+
+static bool isWeaverApplet(std::vector<uint8_t> aid) {
+  if (std::find(kWeaverAIDs.begin(), kWeaverAIDs.end(), aid) !=
+      kWeaverAIDs.end()) {
+    return true;
+  }
+  return false;
+}
 
 SecureElement::SecureElement()
     : mMaxChannelCount(0), mOpenedchannelCount(0), mIsEseInitialized(false) {}
@@ -119,9 +132,10 @@ ScopedAStatus SecureElement::init(
     if (ESESTATUS_SUCCESS == phNxpEse_SetEndPoint_Cntxt(0)) {
       initStatus = phNxpEse_init(initParams);
       if (initStatus == ESESTATUS_SUCCESS) {
-        /*update OS mode during first init*/
-        IS_OSU_MODE(OsuHalExtn::getInstance().INIT, 0);
-
+        if (GET_CHIP_OS_VERSION() < OS_VERSION_8_9) {
+          /*update OS mode during first init*/
+          IS_OSU_MODE(OsuHalExtn::getInstance().INIT, 0);
+        }
         if (ESESTATUS_SUCCESS == phNxpEse_ResetEndPoint_Cntxt(0)) {
           LOG(INFO) << "ESE SPI init complete!!!";
           mIsInitDone = true;
@@ -135,7 +149,8 @@ ScopedAStatus SecureElement::init(
     if (status == ESESTATUS_SUCCESS &&
         (initStatus == ESESTATUS_TRANSCEIVE_FAILED ||
          initStatus == ESESTATUS_FAILED)) {
-      IS_OSU_MODE(OsuHalExtn::getInstance().INIT, 0);
+      if (GET_CHIP_OS_VERSION() < OS_VERSION_8_9)
+        IS_OSU_MODE(OsuHalExtn::getInstance().INIT, 0);
       mIsInitDone = true;
     }
   }
@@ -163,7 +178,8 @@ ScopedAStatus SecureElement::getAtr(std::vector<uint8_t>* _aidl_return) {
   bool mIsSeHalInitDone = false;
 
   // In dedicated mode getATR not allowed
-  if (IS_OSU_MODE(OsuHalExtn::getInstance().GETATR)) {
+  if ((GET_CHIP_OS_VERSION() < OS_VERSION_6_2) &&
+      (IS_OSU_MODE(OsuHalExtn::getInstance().GETATR))) {
     LOG(ERROR) << "%s: Not allowed in dedicated mode!!!" << __func__;
     *_aidl_return = response;
     return ndk::ScopedAStatus::ok();
@@ -181,7 +197,7 @@ ScopedAStatus SecureElement::getAtr(std::vector<uint8_t>* _aidl_return) {
   }
   status = phNxpEse_SetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "Endpoint set failed";
+    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed";
   }
   status = phNxpEse_getAtr(&atrData);
   if (status != ESESTATUS_SUCCESS) {
@@ -195,7 +211,7 @@ ScopedAStatus SecureElement::getAtr(std::vector<uint8_t>* _aidl_return) {
 
   status = phNxpEse_ResetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "Endpoint set failed";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed";
   }
 
   if (status != ESESTATUS_SUCCESS) {
@@ -204,7 +220,7 @@ ScopedAStatus SecureElement::getAtr(std::vector<uint8_t>* _aidl_return) {
       ALOGI("0x%x\t", *i);
   }
 
-  *_aidl_return = response;
+  *_aidl_return = std::move(response);
   if (atrData.p_data != NULL) {
     phNxpEse_free(atrData.p_data);
   }
@@ -228,6 +244,14 @@ ScopedAStatus SecureElement::transmit(const std::vector<uint8_t>& data,
   AutoMutex guard(seHalLock);
   ESESTATUS status = ESESTATUS_FAILED;
   std::vector<uint8_t> result;
+  if (!mOpenedchannelCount) {
+    // 0x69, 0x86 = COMMAND NOT ALLOWED
+    uint8_t sw[2] = {0x69, 0x86};
+    result.resize(sizeof(sw));
+    memcpy(&result[0], sw, sizeof(sw));
+    return ScopedAStatus::fromServiceSpecificError(CHANNEL_NOT_AVAILABLE);
+  }
+
   phNxpEse_memset(&gsTxRxBuffer.cmdData, 0x00, sizeof(phNxpEse_data));
   phNxpEse_memset(&gsTxRxBuffer.rspData, 0x00, sizeof(phNxpEse_data));
   gsTxRxBuffer.cmdData.len = (uint32_t)data.size();
@@ -239,23 +263,24 @@ ScopedAStatus SecureElement::transmit(const std::vector<uint8_t>& data,
     *_aidl_return = result;
     return ScopedAStatus::ok();
   }
-  OsuHalExtn::OsuApduMode mode = IS_OSU_MODE(
-      data, OsuHalExtn::getInstance().TRANSMIT, &gsTxRxBuffer.cmdData);
-  if (mode == OsuHalExtn::getInstance().OSU_BLOCKED_MODE) {
-    LOG(ERROR) << "Not allowed in dedicated mode!!!";
-    /*Return empty vec*/
-    *_aidl_return = result;
-    return ScopedAStatus::ok();
-  } else if (mode == OsuHalExtn::getInstance().OSU_RST_MODE) {
-    uint8_t sw[2] = {0x90, 0x00};
-    result.resize(sizeof(sw));
-    memcpy(&result[0], sw, sizeof(sw));
-    *_aidl_return = result;
-    return ScopedAStatus::ok();
+  if (GET_CHIP_OS_VERSION() < OS_VERSION_8_9) {
+    OsuHalExtn::OsuApduMode mode = IS_OSU_MODE(
+        data, OsuHalExtn::getInstance().TRANSMIT, &gsTxRxBuffer.cmdData);
+    if (mode == OsuHalExtn::getInstance().OSU_BLOCKED_MODE) {
+      LOG(ERROR) << "Not allowed in dedicated mode!!!";
+      /*Return empty vec*/
+      *_aidl_return = result;
+      return ScopedAStatus::ok();
+    } else if (mode == OsuHalExtn::getInstance().OSU_RST_MODE) {
+      uint8_t sw[2] = {0x90, 0x00};
+      result.resize(sizeof(sw));
+      memcpy(&result[0], sw, sizeof(sw));
+      *_aidl_return = result;
+      return ScopedAStatus::ok();
+    }
   } else {
-    // continue with normal processing
+    memcpy(gsTxRxBuffer.cmdData.p_data, data.data(), gsTxRxBuffer.cmdData.len);
   }
-  // memcpy(gsTxRxBuffer.cmdData.p_data, data.data(), gsTxRxBuffer.cmdData.len);
   LOG(INFO) << "Acquired lock for SPI";
   status = phNxpEse_SetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
@@ -272,19 +297,13 @@ ScopedAStatus SecureElement::transmit(const std::vector<uint8_t>& data,
     memcpy(&result[0], respBuf, sizeof(respBuf));
   } else {
     LOG(ERROR) << "transmit failed!!!";
-    if (!mOpenedchannelCount) {
-      // 0x69, 0x86 = COMMAND NOT ALLOWED
-      uint8_t sw[2] = {0x69, 0x86};
-      result.resize(sizeof(sw));
-      memcpy(&result[0], sw, sizeof(sw));
-    }
   }
   status = phNxpEse_ResetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
   }
 
-  *_aidl_return = result;
+  *_aidl_return = std::move(result);
   if (NULL != gsTxRxBuffer.cmdData.p_data) {
     phNxpEse_free(gsTxRxBuffer.cmdData.p_data);
     gsTxRxBuffer.cmdData.p_data = NULL;
@@ -307,6 +326,11 @@ ScopedAStatus SecureElement::openLogicalChannel(
   LogicalChannelResponse resApduBuff;
   resApduBuff.channelNumber = 0xff;
   memset(&resApduBuff, 0x00, sizeof(resApduBuff));
+  if (aid.size() > MAX_AID_LENGTH) {
+    LOG(ERROR) << "%s: AID out of range!!!" << __func__;
+    *_aidl_return = resApduBuff;
+    return ScopedAStatus::fromServiceSpecificError(FAILED);
+  }
 
   /*
    * Basic channel & reserved channel if any is removed
@@ -328,7 +352,8 @@ ScopedAStatus SecureElement::openLogicalChannel(
   LOG(INFO) << "Acquired the lock from SPI openLogicalChannel";
 
   // In dedicated mode openLogical not allowed
-  if (IS_OSU_MODE(OsuHalExtn::getInstance().OPENLOGICAL)) {
+  if ((GET_CHIP_OS_VERSION() < OS_VERSION_8_9) &&
+      (IS_OSU_MODE(OsuHalExtn::getInstance().OPENLOGICAL))) {
     LOG(ERROR) << "%s: Not allowed in dedicated mode!!!" << __func__;
     *_aidl_return = resApduBuff;
     return ScopedAStatus::fromServiceSpecificError(IOERROR);
@@ -398,7 +423,7 @@ ScopedAStatus SecureElement::openLogicalChannel(
     send the callback and return*/
     status = phNxpEse_ResetEndPoint_Cntxt(0);
     if (status != ESESTATUS_SUCCESS) {
-      LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+      LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     }
     *_aidl_return = resApduBuff;
     return ScopedAStatus::fromServiceSpecificError(sestatus);
@@ -492,9 +517,9 @@ ScopedAStatus SecureElement::openLogicalChannel(
   }
   status = phNxpEse_ResetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
   }
-  *_aidl_return = resApduBuff;
+  *_aidl_return = std::move(resApduBuff);
   phNxpEse_free(cpdu.pdata);
   phNxpEse_free(rpdu.pdata);
 
@@ -506,11 +531,18 @@ ScopedAStatus SecureElement::openLogicalChannel(
 ScopedAStatus SecureElement::openBasicChannel(
     const std::vector<uint8_t>& aid, int8_t p2,
     std::vector<uint8_t>* _aidl_return) {
+  std::vector<uint8_t> result;
+  if (aid.size() > MAX_AID_LENGTH) {
+    LOG(ERROR) << "%s: AID out of range!!!" << __func__;
+    *_aidl_return = result;
+    return ScopedAStatus::fromServiceSpecificError(FAILED);
+  }
   AutoMutex guard(seHalLock);
   ESESTATUS status = ESESTATUS_SUCCESS;
   phNxpEse_7816_cpdu_t cpdu;
   phNxpEse_7816_rpdu_t rpdu;
-  std::vector<uint8_t> result;
+  std::vector<uint8_t> ls_aid = {0xA0, 0x00, 0x00, 0x03, 0x96, 0x41, 0x4C,
+                                 0x41, 0x01, 0x43, 0x4F, 0x52, 0x01};
 
   if (mOpenedChannels[0]) {
     LOG(ERROR) << "openBasicChannel failed, channel already in use";
@@ -519,9 +551,9 @@ ScopedAStatus SecureElement::openBasicChannel(
   }
 
   LOG(ERROR) << "Acquired the lock in SPI openBasicChannel";
-  OsuHalExtn::OsuApduMode mode =
-      IS_OSU_MODE(aid, OsuHalExtn::getInstance().OPENBASIC);
-  if (mode == OsuHalExtn::OSU_PROP_MODE) {
+  if ((GET_CHIP_OS_VERSION() < OS_VERSION_8_9) &&
+      IS_OSU_MODE(aid, OsuHalExtn::getInstance().OPENBASIC) ==
+          OsuHalExtn::OSU_PROP_MODE) {
     uint8_t sw[2] = {0x90, 0x00};
     result.resize(sizeof(sw));
     memcpy(&result[0], sw, 2);
@@ -552,6 +584,8 @@ ScopedAStatus SecureElement::openBasicChannel(
       *_aidl_return = result;
       return ScopedAStatus::fromServiceSpecificError(FAILED);
     } else {
+      mOpenedChannels[0] = true;
+      mOpenedchannelCount++;
       *_aidl_return = result;
       return ScopedAStatus::ok();
     }
@@ -566,22 +600,24 @@ ScopedAStatus SecureElement::openBasicChannel(
     }
   }
 
-  phNxpEse_data atrData;
-  if (phNxpEse_getAtr(&atrData) != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_getAtr failed";
-  }
-  if (atrData.p_data != NULL) {
-    phNxpEse_free(atrData.p_data);
-  }
-
-  if (phNxpEse_GetOsMode() == OSU_MODE) {
-    if (mOpenedchannelCount == 0) {
-      if (seHalDeInit() != SESTATUS_SUCCESS) {
-        LOG(INFO) << "seDeInit Failed";
-      }
+  if (GET_CHIP_OS_VERSION() < OS_VERSION_8_9) {
+    phNxpEse_data atrData;
+    if (phNxpEse_getAtr(&atrData) != ESESTATUS_SUCCESS) {
+      LOG(ERROR) << "phNxpEse_getAtr failed";
     }
-    *_aidl_return = result;
-    return ScopedAStatus::fromServiceSpecificError(IOERROR);
+    if (atrData.p_data != NULL) {
+      phNxpEse_free(atrData.p_data);
+    }
+
+    if (phNxpEse_GetOsMode() == OSU_MODE) {
+      if (mOpenedchannelCount == 0) {
+        if (seHalDeInit() != SESTATUS_SUCCESS) {
+          LOG(INFO) << "seDeInit Failed";
+        }
+      }
+      *_aidl_return = result;
+      return ScopedAStatus::fromServiceSpecificError(IOERROR);
+    }
   }
 
   if (mOpenedChannels.size() == 0x00) {
@@ -659,7 +695,7 @@ ScopedAStatus SecureElement::openBasicChannel(
   }
   status = phNxpEse_ResetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
   }
   if (sestatus != SESTATUS_SUCCESS) {
     int closeChannelStatus = internalCloseChannel(DEFAULT_BASIC_CHANNEL);
@@ -667,7 +703,7 @@ ScopedAStatus SecureElement::openBasicChannel(
       LOG(ERROR) << "%s: closeChannel Failed" << __func__;
     }
   }
-  *_aidl_return = result;
+  *_aidl_return = std::move(result);
   phNxpEse_free(cpdu.pdata);
   phNxpEse_free(rpdu.pdata);
   return sestatus == SESTATUS_SUCCESS
@@ -713,7 +749,7 @@ int SecureElement::internalCloseChannel(uint8_t channelNumber) {
     }
     status = phNxpEse_ResetEndPoint_Cntxt(0);
     if (status != ESESTATUS_SUCCESS) {
-      LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+      LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     }
   } else if (channelNumber == DEFAULT_BASIC_CHANNEL &&
              mOpenedChannels[channelNumber]) {
@@ -740,7 +776,8 @@ ScopedAStatus SecureElement::closeChannel(int8_t channelNumber) {
   AutoMutex guard(seHalLock);
   int sestatus;
   // Close internal allowed when not in dedicated Mode
-  if (!IS_OSU_MODE(OsuHalExtn::getInstance().CLOSE, channelNumber)) {
+  if ((GET_CHIP_OS_VERSION() >= OS_VERSION_8_9) ||
+      (!IS_OSU_MODE(OsuHalExtn::getInstance().CLOSE, channelNumber))) {
     sestatus = internalCloseChannel(channelNumber);
   } else {
     /*Decrement channel count opened to
@@ -804,7 +841,7 @@ int SecureElement::seHalDeInit() {
   if (ESESTATUS_SUCCESS != deInitStatus) mIsDeInitDone = false;
   status = phNxpEse_ResetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
-    LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
+    LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     mIsDeInitDone = false;
   }
   status = phNxpEse_close(deInitStatus);
@@ -918,13 +955,11 @@ static int getResponseInternal(uint8_t cla, phNxpEse_7816_rpdu_t& rpdu,
 }
 
 uint8_t SecureElement::getReserveChannelCnt(const std::vector<uint8_t>& aid) {
-  const std::vector<uint8_t> weaverAid = {0xA0, 0x00, 0x00, 0x03,
-                                          0x96, 0x10, 0x10};
   const std::vector<uint8_t> araAid = {0xA0, 0x00, 0x00, 0x01, 0x51,
                                        0x41, 0x43, 0x4C, 0x00};
   uint8_t reserveChannel = 0;
   // Check priority access enabled then only reserve channel
-  if (mHasPriorityAccess && aid != weaverAid && aid != araAid) {
+  if (mHasPriorityAccess && !isWeaverApplet(aid) && aid != araAid) {
     // Exclude basic channel
     reserveChannel = 1;
   }
