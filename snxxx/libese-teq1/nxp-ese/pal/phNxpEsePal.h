@@ -110,11 +110,13 @@ void phPalEse_close(void* pDevHandle);
  * \brief Open and configure ESE device
  *
  * \param[in]       pConfig: Config to open the device
+ * \param[in]       pcontext: Ese Cntx from T=1 lib
  *
  * \retval  ESESTATUS On Success ESESTATUS_SUCCESS else proper error code
  *
  */
-ESESTATUS phPalEse_open_and_configure(pphPalEse_Config_t pConfig);
+ESESTATUS phPalEse_open_and_configure(pphPalEse_Config_t pConfig,
+                                      void* pcontext);
 
 /**
  * \ingroup eSe_PAL

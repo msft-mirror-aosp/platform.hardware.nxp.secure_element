@@ -317,7 +317,7 @@ ESESTATUS phNxpEse_open(phNxpEse_initParams initParams) {
   tPalConfig.pDevName = (int8_t*)ese_dev_node;
 
   /* Initialize PAL layer */
-  wConfigStatus = phPalEse_open_and_configure(&tPalConfig);
+  wConfigStatus = phPalEse_open_and_configure(&tPalConfig, (void*)&nxpese_ctxt);
   if (wConfigStatus != ESESTATUS_SUCCESS) {
     NXP_LOG_ESE_E("phPalEse_Init Failed");
     if (ESESTATUS_DRIVER_BUSY == wConfigStatus)
