@@ -977,6 +977,10 @@ ESESTATUS phNxpEse_WriteFrame(uint32_t data_len, uint8_t* p_data) {
   NXP_LOG_ESE_D("Enter %s ", __FUNCTION__);
   /* TODO where to set the nad id */
   p_data[0] = nxpese_ctxt.nadInfo.nadTx;
+  if (data_len > MAX_DATA_LEN) {
+    NXP_LOG_ESE_E("%s data_len has exceeded MAX_DATA_LEN\n", __FUNCTION__);
+    return ESESTATUS_FAILED;
+  }
   /* Create local copy of cmd_data */
   phNxpEse_memcpy(nxpese_ctxt.p_cmd_data, p_data, data_len);
   nxpese_ctxt.cmd_len = data_len;
