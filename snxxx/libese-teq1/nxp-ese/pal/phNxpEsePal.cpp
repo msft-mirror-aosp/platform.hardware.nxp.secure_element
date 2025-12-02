@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018-2020,2022,2025 NXP
+ *  Copyright 2018-2020,2022,2024-2025 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -239,9 +239,9 @@ void phPalEse_print_packet(const char* pString, const uint8_t* p_data,
     snprintf(&print_buffer[i * 2], 3, "%02X", p_data[i]);
   }
   if (0 == memcmp(pString, "SEND", 0x04)) {
-    NXP_LOG_ESE_D("NxpEseDataX len = %3d > %s", len, print_buffer);
+    NXP_LOG_ESE_I("NxpEseDataX len = %3d > %s", len, print_buffer);
   } else if (0 == memcmp(pString, "RECV", 0x04)) {
-    NXP_LOG_ESE_D("NxpEseDataR len = %3d > %s", len, print_buffer);
+    NXP_LOG_ESE_I("NxpEseDataR len = %3d > %s", len, print_buffer);
   }
   return;
 }

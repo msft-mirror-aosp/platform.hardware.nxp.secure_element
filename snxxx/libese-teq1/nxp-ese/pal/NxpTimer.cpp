@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2023 NXP
+ * Copyright 2022-2023,2025 NXP
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,9 +17,12 @@
 #include "NxpTimer.h"
 
 #include <android-base/logging.h>
+#include <log/log.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "ese_logs.h"
 
 NxpTimer::NxpTimer(std::string tag) {
   logtag = std::move(tag);
@@ -34,7 +37,7 @@ void NxpTimer::startTimer() {
   clock_gettime(CLOCK_MONOTONIC, &tm);
   start_ts = tm.tv_nsec * 1e-3 + tm.tv_sec * 1e+6;
 
-  LOG(INFO) << logtag << " Timer started";
+  NXP_LOG_ESE_D("%s Timer started", logtag.c_str());
 }
 void NxpTimer::stopTimer() {
   is_running = false;
@@ -43,7 +46,7 @@ void NxpTimer::stopTimer() {
   clock_gettime(CLOCK_MONOTONIC, &tm);
   end_ts = tm.tv_nsec * 1e-3 + tm.tv_sec * 1e+6;
 
-  LOG(INFO) << logtag << " Timer stopped";
+  NXP_LOG_ESE_D("%s Timer stopped", logtag.c_str());
 }
 unsigned long NxpTimer::totalDuration() {
   unsigned long duration = end_ts - start_ts;
