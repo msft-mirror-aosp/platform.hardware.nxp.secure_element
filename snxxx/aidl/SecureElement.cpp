@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2023-2024 NXP
+ *  Copyright 2023-2025 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -102,6 +102,7 @@ ScopedAStatus SecureElement::init(
     return ScopedAStatus::fromExceptionCode(EX_NULL_POINTER);
   }
   uid_t clientUid = AIBinder_getCallingUid();
+  LOG(INFO) << "clientUid: " << clientUid;
   // Allow VTS tests even if omapi acquires the lock.
   if (!isClientVts(clientUid) && !handleClientCallback(clientCallback)) {
     LOG(INFO) << __func__ << " client not allowed";
@@ -296,7 +297,6 @@ ScopedAStatus SecureElement::transmit(const std::vector<uint8_t>& data,
   } else {
     memcpy(gsTxRxBuffer.cmdData.p_data, data.data(), gsTxRxBuffer.cmdData.len);
   }
-  LOG(INFO) << "Acquired lock for SPI";
   status = phNxpEse_SetEndPoint_Cntxt(0);
   if (status != ESESTATUS_SUCCESS) {
     LOG(ERROR) << "phNxpEse_SetEndPoint_Cntxt failed!!!";
@@ -339,12 +339,11 @@ ScopedAStatus SecureElement::openLogicalChannel(
   std::vector<uint8_t> manageChannelCommand = {0x00, 0x70, 0x00, 0x00, 0x01};
 
   LogicalChannelResponse resApduBuff;
-  resApduBuff.channelNumber = 0xff;
+  resApduBuff.channelNumber = -1;
   memset(&resApduBuff, 0x00, sizeof(resApduBuff));
   if (aid.size() > MAX_AID_LENGTH) {
     LOG(ERROR) << "%s: AID out of range!!!" << __func__;
     *_aidl_return = resApduBuff;
-    handleClientCbCleanup();
     return ScopedAStatus::fromServiceSpecificError(FAILED);
   }
 
@@ -362,7 +361,6 @@ ScopedAStatus SecureElement::openLogicalChannel(
     ALOGE("%s: Reached Max supported(%d) Logical Channel", __func__,
           openedLogicalChannelCount);
     *_aidl_return = resApduBuff;
-    handleClientCbCleanup();
     return ScopedAStatus::fromServiceSpecificError(CHANNEL_NOT_AVAILABLE);
   }
 
@@ -373,14 +371,12 @@ ScopedAStatus SecureElement::openLogicalChannel(
       (IS_OSU_MODE(OsuHalExtn::getInstance().OPENLOGICAL))) {
     LOG(ERROR) << "%s: Not allowed in dedicated mode!!!" << __func__;
     *_aidl_return = resApduBuff;
-    handleClientCbCleanup();
     return ScopedAStatus::fromServiceSpecificError(IOERROR);
   }
   if (!mIsEseInitialized) {
     ESESTATUS status = seHalInit();
     if (status != ESESTATUS_SUCCESS) {
       LOG(ERROR) << "%s: seHalInit Failed!!!" << __func__;
-      handleClientCbCleanup();
       *_aidl_return = resApduBuff;
       return ScopedAStatus::fromServiceSpecificError(IOERROR);
     }
@@ -411,10 +407,10 @@ ScopedAStatus SecureElement::openLogicalChannel(
   }
   status = phNxpEse_Transceive(&cmdApdu, &rspApdu);
   if (status != ESESTATUS_SUCCESS) {
-    resApduBuff.channelNumber = 0xff;
+    resApduBuff.channelNumber = -1;
   } else if (rspApdu.p_data[rspApdu.len - 2] == 0x6A &&
              rspApdu.p_data[rspApdu.len - 1] == 0x81) {
-    resApduBuff.channelNumber = 0xff;
+    resApduBuff.channelNumber = -1;
     sestatus = ISecureElement::CHANNEL_NOT_AVAILABLE;
   } else if (rspApdu.p_data[rspApdu.len - 2] == 0x90 &&
              rspApdu.p_data[rspApdu.len - 1] == 0x00) {
@@ -445,7 +441,6 @@ ScopedAStatus SecureElement::openLogicalChannel(
       LOG(ERROR) << "phNxpEse_ResetEndPoint_Cntxt failed!!!";
     }
     *_aidl_return = resApduBuff;
-    handleClientCbCleanup();
     return ScopedAStatus::fromServiceSpecificError(sestatus);
   }
   LOG(INFO) << "openLogicalChannel Sending selectApdu";
@@ -468,9 +463,8 @@ ScopedAStatus SecureElement::openLogicalChannel(
     cpdu.cla = resApduBuff.channelNumber; /* Class of instruction */
   } else {
     ALOGE("%s: Invalid Channel no: %02x", __func__, resApduBuff.channelNumber);
-    resApduBuff.channelNumber = 0xff;
+    resApduBuff.channelNumber = -1;
     *_aidl_return = resApduBuff;
-    handleClientCbCleanup();
     return ScopedAStatus::fromServiceSpecificError(IOERROR);
   }
   cpdu.ins = 0xA4; /* Instruction code */
@@ -529,12 +523,11 @@ ScopedAStatus SecureElement::openLogicalChannel(
     }
   }
   if (sestatus != SESTATUS_SUCCESS) {
-    handleClientCbCleanup();
     int closeChannelStatus = internalCloseChannel(resApduBuff.channelNumber);
     if (closeChannelStatus != SESTATUS_SUCCESS) {
       LOG(ERROR) << "%s: closeChannel Failed" << __func__;
     } else {
-      resApduBuff.channelNumber = 0xff;
+      resApduBuff.channelNumber = -1;
     }
   }
   status = phNxpEse_ResetEndPoint_Cntxt(0);
@@ -812,7 +805,6 @@ ScopedAStatus SecureElement::closeChannel(int8_t channelNumber) {
     }
     sestatus = SESTATUS_SUCCESS;
   }
-  handleClientCbCleanup();
   return sestatus == SESTATUS_SUCCESS
              ? ndk::ScopedAStatus::ok()
              : ndk::ScopedAStatus::fromServiceSpecificError(sestatus);
@@ -883,9 +875,9 @@ int SecureElement::seHalDeInit() {
 }
 
 ScopedAStatus SecureElement::reset() {
-  LOG(INFO) << __func__;
   ESESTATUS status = ESESTATUS_SUCCESS;
   int sestatus = ISecureElement::FAILED;
+
   LOG(INFO) << __func__ << " Enter";
   if (!mIsEseInitialized) {
     ESESTATUS status = seHalInit();
@@ -912,6 +904,10 @@ ScopedAStatus SecureElement::reset() {
     }
   }
   LOG(ERROR) << __func__ << ": Exit";
+  if (!isOmapi) {
+    // Ensure this is done only at the end of reset() function.
+    handleClientCbCleanup();
+  }
   return sestatus == SESTATUS_SUCCESS
              ? ndk::ScopedAStatus::ok()
              : ndk::ScopedAStatus::fromServiceSpecificError(sestatus);
@@ -973,7 +969,9 @@ static int getResponseInternal(uint8_t cla, phNxpEse_7816_rpdu_t& rpdu,
     rpdu.sw1 = INVALID_LEN_SW1;
     rpdu.sw2 = INVALID_LEN_SW2;
   }
-
+  if (rspApdu.p_data != NULL) {
+    phNxpEse_free(rspApdu.p_data);
+  }
   return sestatus;
 }
 
@@ -1007,13 +1005,11 @@ uint8_t SecureElement::getMaxChannelCnt() {
   return cnt;
 }
 
-void SecureElement::handleStateOnDeath() {
-  if (!isClientVts(mCbClientUid)) {
-    seHalClientLock.unlock();
-  }
-}
+void SecureElement::handleStateOnDeath() { handleClientCbCleanup(); }
+
 void SecureElement::handleClientCbCleanup() {
-  if (!isClientVts(mCbClientUid) && !isOmapi) {
+  if (!isClientVts(mCbClientUid)) {
+    LOG(INFO) << "Releasing ownership from client: " << mCbClientUid;
     seHalClientLock.unlock();
   }
 }
@@ -1023,7 +1019,8 @@ bool SecureElement::handleClientCallback(
   AutoMutex guard(initLock);
   LOG(INFO) << "isOmapi : " << isOmapi;
   uid_t currentClientUid = AIBinder_getCallingUid();
-  if (isOmapi && (currentClientUid != AID_SECURE_ELEMENT)) {
+  // To support private space UIDs of Omapi service
+  if (isOmapi && ((currentClientUid % 100000) != AID_SECURE_ELEMENT)) {
     return false;
   }
   // Lock the mutex until the acquired client either closes the channel or
@@ -1038,7 +1035,7 @@ bool SecureElement::handleClientCallback(
     seHalClientLock.unlock();
     return false;
   }
-  isOmapi = (currentClientUid == AID_SECURE_ELEMENT);
+  isOmapi = ((currentClientUid % 100000) == AID_SECURE_ELEMENT);
 
   return true;
 }

@@ -421,6 +421,9 @@ static ESESTATUS phNxpEseProto7816_SendSFrame(sFrameInfo_t sFrameData) {
         p_framebuff[3] = PH_PROTO_7816_VALUE_ZERO;
       else {
         if (sframeData.len + 2 > frame_len) {
+          if (NULL != p_framebuff) {
+            phNxpEse_free(p_framebuff);
+          }
           return ESESTATUS_FAILED;
         }
         phNxpEse_memcpy(&(p_framebuff[3]), sframeData.p_data, sframeData.len);
@@ -577,7 +580,7 @@ static ESESTATUS phNxpEseProto7816_SendIframe(iFrameInfo_t iFrameData) {
   } else { /* Case for frame size < 254 bytes */
     /* store I frame length */
     p_framebuff[2] = iFrameData.sendDataLen;
-    frame_len = frame_len - 2;
+    frame_len = frame_len > 2 ? frame_len - 2 : 0;
     /* store I frame */
     phNxpEse_memcpy(&(p_framebuff[3]),
                     iFrameData.p_data + iFrameData.dataOffset,
