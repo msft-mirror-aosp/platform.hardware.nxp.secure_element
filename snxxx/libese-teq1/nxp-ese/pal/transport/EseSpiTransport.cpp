@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018-2020, 2023 NXP
+ *  Copyright 2018-2020, 2023-2025 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -55,10 +55,6 @@ eseIoctlData_t eseioctldata;
 #endif
 // Default max retry count for SPI CLT write blocked in secs
 static unsigned long int gsMaxSpiWriteRetryCnt = 10;
-#if (NFC_NXP_ESE_VER == JCOP_VER_4_0)
-static ESESTATUS phNxpEse_spiIoctl_legacy(uint64_t ioctlType, void* p_data);
-#endif
-
 /*******************************************************************************
 **
 ** Function         phPalEse_spi_close
@@ -114,44 +110,7 @@ ESESTATUS phNxpEse_spiIoctl(uint64_t ioctlType, void* p_data) {
       break;
   }
 #endif
-#if (NFC_NXP_ESE_VER == JCOP_VER_4_0)
-  status = phNxpEse_spiIoctl_legacy(ioctlType, p_data);
-#endif
   return status;
-}
-#endif
-
-#if (NFC_NXP_ESE_VER == JCOP_VER_4_0)
-/*******************************************************************************
-**
-** Function         phNxpEse_spiIoctl_legacy
-**
-** Description      Perform cross HAL IOCTL functionality
-**
-** Parameters       ioctlType, input data
-**
-** Returns          SUCCESS/FAIL
-**
-*******************************************************************************/
-static ESESTATUS phNxpEse_spiIoctl_legacy(uint64_t ioctlType, void* p_data) {
-  ese_nxp_IoctlInOutData_t* inpOutData = (ese_nxp_IoctlInOutData_t*)p_data;
-  switch (ioctlType) {
-    case HAL_ESE_IOCTL_RF_STATUS_UPDATE:
-
-      rf_status = inpOutData->inp.data.nxpCmd.p_cmd[0];
-      if (rf_status == 1) {
-        NXP_LOG_ESE_D(
-            "******************RF IS ON*************************************");
-      } else {
-        NXP_LOG_ESE_D(
-            "******************RF IS OFF*************************************");
-      }
-      break;
-    default:
-      NXP_LOG_ESE_D("Invalid IOCTL type");
-      break;
-  }
-  return ESESTATUS_SUCCESS;
 }
 #endif
 
@@ -162,7 +121,7 @@ static ESESTATUS phNxpEse_spiIoctl_legacy(uint64_t ioctlType, void* p_data) {
 ** Description      Open and configure pn547 device
 **
 ** Parameters       pConfig     - hardware information
-**                  pLinkHandle - device handle
+**                  pContext - Ese Context of T=1 library
 **
 ** Returns          ESE status:
 **                  ESESTATUS_SUCCESS            - open_and_configure operation
@@ -170,7 +129,8 @@ static ESESTATUS phNxpEse_spiIoctl_legacy(uint64_t ioctlType, void* p_data) {
 **                  ESESTATUS_INVALID_DEVICE     - device open operation failure
 **
 *******************************************************************************/
-ESESTATUS EseSpiTransport::OpenAndConfigure(pphPalEse_Config_t pConfig) {
+ESESTATUS EseSpiTransport::OpenAndConfigure(pphPalEse_Config_t pConfig,
+                                            void* pContext) {
   int nHandle;
   int retryCnt = 0;
   ALOGD("NxpEse EseSpiTransport::OpenAndConfigure 1");
@@ -212,17 +172,8 @@ retry:
                   nHandle);
 
     if ((errno == -EBUSY) || (errno == EBUSY)) {
-      if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-        phPalEse_sleep(100 * 1000);  // 100ms delay
-        return ESESTATUS_DRIVER_BUSY;
-      } else {
-        retryCnt++;
-        NXP_LOG_ESE_E("Retry open eSE driver, retry cnt : %d", retryCnt);
-        if (retryCnt < MAX_RETRY_CNT) {
-          phPalEse_sleep(1000000);
-          goto retry;
-        }
-      }
+      phPalEse_sleep(100 * 1000);  // 100ms delay
+      return ESESTATUS_DRIVER_BUSY;
     }
     NXP_LOG_ESE_E("_spi_open() Failed: retval %x", nHandle);
     pConfig->pDevHandle = NULL;
@@ -278,14 +229,6 @@ int EseSpiTransport::Write(void* pDevHandle, uint8_t* pBuffer,
   if (NULL == pDevHandle) {
     NXP_LOG_ESE_E("phPalEse_spi_write: received pDevHandle=NULL");
     return -1;
-  }
-  if (GET_CHIP_OS_VERSION() == OS_VERSION_4_0) {
-    if (mConfigSofWrite == 1) {
-      /* Appending SOF for SPI write */
-      pBuffer[0] = SEND_PACKET_SOF;
-    } else {
-      /* Do Nothing */
-    }
   }
   NXP_LOG_ESE_D("NXP_SPI_WRITE_TIMEOUT value is... : %ld secs",
                 mConfigSpiWriteTimeout);
@@ -357,35 +300,11 @@ ESESTATUS EseSpiTransport::Ioctl(phPalEse_ControlCode_t eControlCode,
 #endif
   NXP_LOG_ESE_D("phPalEse_spi_ioctl(), ioctl %x , level %lx", eControlCode,
                 level);
-  if (NULL == pDevHandle) {
-    if (GET_CHIP_OS_VERSION() == OS_VERSION_4_0) {
-      return ESESTATUS_IOCTL_FAILED;
-    }
-  }
   switch (eControlCode) {
     case phPalEse_e_ResetDevice:
-      if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-        ret = ESESTATUS_SUCCESS;
-      } else {
-        ret = (ESESTATUS)ioctl((intptr_t)pDevHandle, P61_SET_PWR, level);
-      }
+      ret = ESESTATUS_SUCCESS;
       break;
 
-    case phPalEse_e_EnableLog:
-      if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-        ret = ESESTATUS_SUCCESS;
-      } else {
-        ret = (ESESTATUS)ioctl((intptr_t)pDevHandle, P61_SET_DBG, level);
-      }
-      break;
-
-    case phPalEse_e_EnablePollMode:
-      if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-        ret = ESESTATUS_SUCCESS;
-      } else {
-        ret = (ESESTATUS)ioctl((intptr_t)pDevHandle, P61_SET_POLL, level);
-      }
-      break;
     case phPalEse_e_SetSecureMode:
       ret =
           (ESESTATUS)ioctl((intptr_t)pDevHandle, ESE_SET_TRUSTED_ACCESS, level);
@@ -394,89 +313,61 @@ ESESTATUS EseSpiTransport::Ioctl(phPalEse_ControlCode_t eControlCode,
       }
       break;
     case phPalEse_e_ChipRst:
-      if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-        if (level == 5) {               // SPI driver communication part
-          if (!mConfigColdResetIntf) {  // Call the driver IOCTL
-            unsigned int cmd = ESE_PERFORM_COLD_RESET;
-            if ((mConfigGpioReset == 0x01) &&
-                ((GET_CHIP_OS_VERSION() == OS_VERSION_8_9))) {
-              cmd = P61_SET_PWR;
-            }
-            retioctl = ioctl((intptr_t)pDevHandle, cmd, level);
-            if (0x00 <= retioctl) {
-              ret = ESESTATUS_SUCCESS;
-            }
-          } else {
-            if ((NFC_NXP_ESE_VER == JCOP_VER_5_x) &&
-                (GET_CHIP_OS_VERSION() != OS_VERSION_8_9)) {
-              // Nfc Driver communication part
-              pNfcAdapt.Initialize();
-              ret = pNfcAdapt.resetEse(level);
-            } else {
-              NXP_LOG_ESE_E("%s: Not supported", __func__);
-              ret = ESESTATUS_SUCCESS;
-            }
+      if (level == 5) {               // SPI driver communication part
+        if (!mConfigColdResetIntf) {  // Call the driver IOCTL
+          unsigned int cmd = ESE_PERFORM_COLD_RESET;
+          if ((mConfigGpioReset == 0x01) &&
+              ((GET_CHIP_OS_VERSION() == OS_VERSION_8_9))) {
+            cmd = P61_SET_PWR;
+          }
+          retioctl = ioctl((intptr_t)pDevHandle, cmd, level);
+          if (0x00 <= retioctl) {
+            ret = ESESTATUS_SUCCESS;
           }
         } else {
-          ret = ESESTATUS_SUCCESS;
+          if ((NFC_NXP_ESE_VER == JCOP_VER_5_x) &&
+              (GET_CHIP_OS_VERSION() != OS_VERSION_8_9)) {
+            // Nfc Driver communication part
+            pNfcAdapt.Initialize();
+            ret = pNfcAdapt.resetEse(level);
+            pNfcAdapt.DeInitialize();
+          } else {
+            NXP_LOG_ESE_E("%s: Not supported", __func__);
+            ret = ESESTATUS_SUCCESS;
+          }
         }
       } else {
-        ret = (ESESTATUS)ioctl((intptr_t)pDevHandle, P61_SET_SPM_PWR, level);
+        ret = ESESTATUS_SUCCESS;
       }
       break;
     case phPalEse_e_ResetProtection:
-      if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-        retioctl = ioctl((intptr_t)pDevHandle, PERFORM_RESET_PROTECTION, level);
+      retioctl = ioctl((intptr_t)pDevHandle, PERFORM_RESET_PROTECTION, level);
+      if (0x00 <= retioctl) {
+        ret = ESESTATUS_SUCCESS;
+      } else {
+        NXP_LOG_ESE_E("phPalEse_e_ResetProtection ioctl failed status :%x !",
+                      retioctl);
+      }
+      break;
+    case phPalEse_e_GpioReset:
+      if (5 == level) {
+        retioctl = ioctl((intptr_t)pDevHandle, P61_SET_PWR, level);
         if (0x00 <= retioctl) {
           ret = ESESTATUS_SUCCESS;
-        } else {
-          NXP_LOG_ESE_E("phPalEse_e_ResetProtection ioctl failed status :%x !",
-                        retioctl);
         }
-      }
-      break;
-    case phPalEse_e_EnableThroughputMeasurement:
-      if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-        ret = ESESTATUS_SUCCESS;
       } else {
-        ret = (ESESTATUS)ioctl((intptr_t)pDevHandle, P61_SET_THROUGHPUT, level);
+        NXP_LOG_ESE_E("phPalEse_e_GpioReset:  Invalid level");
       }
       break;
-
-    case phPalEse_e_SetPowerScheme:
-      if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-        ret = ESESTATUS_SUCCESS;
+    case phPalEse_e_ColdReset:
+      if (5 == level) {
+        retioctl = ioctl((intptr_t)pDevHandle, ESE_PERFORM_COLD_RESET, level);
+        if (0x00 <= retioctl) {
+          ret = ESESTATUS_SUCCESS;
+        }
       } else {
-        ret =
-            (ESESTATUS)ioctl((intptr_t)pDevHandle, P61_SET_POWER_SCHEME, level);
+        NXP_LOG_ESE_E("phPalEse_e_ColdReset:  Invalid level");
       }
-      break;
-
-    case phPalEse_e_GetSPMStatus:
-      if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-        ret = ESESTATUS_SUCCESS;
-      } else {
-        ret = (ESESTATUS)ioctl((intptr_t)pDevHandle, P61_GET_SPM_STATUS, level);
-      }
-      break;
-
-    case phPalEse_e_GetEseAccess:
-      if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-        ret = ESESTATUS_SUCCESS;
-      } else {
-        ret = (ESESTATUS)ioctl((intptr_t)pDevHandle, P61_GET_ESE_ACCESS, level);
-      }
-      break;
-    case phPalEse_e_SetJcopDwnldState:
-      if (GET_CHIP_OS_VERSION() != OS_VERSION_4_0) {
-        ret = ESESTATUS_SUCCESS;
-      } else {
-        ret =
-            (ESESTATUS)ioctl((intptr_t)pDevHandle, P61_SET_DWNLD_STATUS, level);
-      }
-      break;
-    case phPalEse_e_DisablePwrCntrl:
-      ret = ESESTATUS_SUCCESS;
       break;
     default:
       ret = ESESTATUS_IOCTL_FAILED;

@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018-2023 NXP
+ *  Copyright 2018-2025 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -115,7 +115,6 @@ typedef struct phNxpEse_initParams {
  */
 ESESTATUS phNxpEse_init(phNxpEse_initParams initParams);
 
-#ifdef NXP_BOOTTIME_UPDATE
 /**
  * \ingroup spi_libese
  *
@@ -129,7 +128,6 @@ ESESTATUS phNxpEse_init(phNxpEse_initParams initParams);
  *
  */
 ESESTATUS phNxpEse_spiIoctl(uint64_t ioctlType, void* p_data);
-#endif
 
 /**
  * \ingroup spi_libese
@@ -237,16 +235,6 @@ ESESTATUS phNxpEse_resetJcopUpdate(void);
 
 /**
  * \ingroup spi_libese
- * \brief This function reset the P73 through ISO RST pin
- *
- *
- * \retval ESESTATUS_SUCCESS Always return ESESTATUS_SUCCESS (0).
- *
- */
-ESESTATUS phNxpEse_chipReset(void);
-
-/**
- * \ingroup spi_libese
  * \brief This function is used to set IFSC size
  *
  * \param[in]       IFS_Size
@@ -345,6 +333,11 @@ void phNxpEse_free(void* ptr);
  * \ingroup spi_libese
  * \brief This function power recycles the ESE
  *        (using prop. FW command) by talking to NFC HAL
+ *        or via GPIO based on the configuration and platform type
+ *        also if escalated reset is configured this function
+ *        first tries the GPIO reset and if ese still not
+ *        recovered it tries the cold reset via NFC
+ *
  *
  *        Note:
  *        After cold reset, phNxpEse_init need to be called to

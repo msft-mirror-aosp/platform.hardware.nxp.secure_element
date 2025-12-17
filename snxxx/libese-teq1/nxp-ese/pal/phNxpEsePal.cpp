@@ -1,6 +1,6 @@
 /******************************************************************************
  *
- *  Copyright 2018-2020,2022 NXP
+ *  Copyright 2018-2020,2022,2024-2025 NXP
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -82,18 +82,19 @@ void phPalEse_close(void* pDevHandle) {
 **
 ** Description      Open and configure ESE device
 **
-** Parameters       pConfig     - hardware information
+** Parameters       pConfig    - hardware information
+**                  pContext   - Ese Context of T=1 lib
 **
 ** Returns          ESE status:
-**                  ESESTATUS_SUCCESS            - open_and_configure operation
-*success
-**                  ESESTATUS_INVALID_DEVICE     - device open operation failure
+**                  ESESTATUS_SUCCESS  - open_and_configure operation success
+**                  ESESTATUS_INVALID_DEVICE  - device open operation failure
 **
 *******************************************************************************/
-ESESTATUS phPalEse_open_and_configure(pphPalEse_Config_t pConfig) {
+ESESTATUS phPalEse_open_and_configure(pphPalEse_Config_t pConfig,
+                                      void* pContext) {
   ESESTATUS status = ESESTATUS_FAILED;
   if (ESESTATUS_SUCCESS != phPalEse_ConfigTransport()) return ESESTATUS_FAILED;
-  status = gpTransportObj->OpenAndConfigure(pConfig);
+  status = gpTransportObj->OpenAndConfigure(pConfig, pContext);
   return status;
 }
 
@@ -184,11 +185,6 @@ ESESTATUS phPalEse_ioctl(phPalEse_ControlCode_t eControlCode, void* pDevHandle,
   ESESTATUS ret = ESESTATUS_FAILED;
   NXP_LOG_ESE_D("phPalEse_spi_ioctl(), ioctl %x , level %lx", eControlCode,
                 level);
-  if (GET_CHIP_OS_VERSION() == OS_VERSION_4_0) {
-    if (NULL == pDevHandle) {
-      return ESESTATUS_IOCTL_FAILED;
-    }
-  }
   if (pDevHandle == NULL) {
     phPalEse_ConfigTransport();
   }
@@ -243,9 +239,9 @@ void phPalEse_print_packet(const char* pString, const uint8_t* p_data,
     snprintf(&print_buffer[i * 2], 3, "%02X", p_data[i]);
   }
   if (0 == memcmp(pString, "SEND", 0x04)) {
-    NXP_LOG_ESE_D("NxpEseDataX len = %3d > %s", len, print_buffer);
+    NXP_LOG_ESE_I("NxpEseDataX len = %3d > %s", len, print_buffer);
   } else if (0 == memcmp(pString, "RECV", 0x04)) {
-    NXP_LOG_ESE_D("NxpEseDataR len = %3d > %s", len, print_buffer);
+    NXP_LOG_ESE_I("NxpEseDataR len = %3d > %s", len, print_buffer);
   }
   return;
 }
