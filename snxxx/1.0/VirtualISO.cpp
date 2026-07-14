@@ -216,10 +216,15 @@ Return<void> VirtualISO::openLogicalChannel(const hidl_vec<uint8_t>& aid,
     sestatus = SecureElementStatus::CHANNEL_NOT_AVAILABLE;
   } else if (rspApdu.p_data[rspApdu.len - 2] == 0x90 &&
              rspApdu.p_data[rspApdu.len - 1] == 0x00) {
-    resApduBuff.channelNumber = rspApdu.p_data[0];
-    mOpenedchannelCount++;
-    mOpenedChannels[resApduBuff.channelNumber] = true;
-    sestatus = SecureElementStatus::SUCCESS;
+    if (rspApdu.p_data[0] < mMaxChannelCount && rspApdu.p_data[0] > 0) {
+      resApduBuff.channelNumber = rspApdu.p_data[0];
+      mOpenedchannelCount++;
+      mOpenedChannels[resApduBuff.channelNumber] = true;
+      sestatus = SecureElementStatus::SUCCESS;
+    } else {
+      resApduBuff.channelNumber = 0xff;
+      sestatus = SecureElementStatus::CHANNEL_NOT_AVAILABLE;
+    }
   } else if (((rspApdu.p_data[rspApdu.len - 2] == 0x6E) ||
               (rspApdu.p_data[rspApdu.len - 2] == 0x6D)) &&
              rspApdu.p_data[rspApdu.len - 1] == 0x00) {
